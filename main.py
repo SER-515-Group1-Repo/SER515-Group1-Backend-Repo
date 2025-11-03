@@ -30,6 +30,9 @@ def get_db():
         db.close()
 
 
+print("Test Github Connection")
+
+
 @app.get("/stories", response_model=list[schemas.StoryResponse])
 def get_stories(db: Session = Depends(get_db)):
 
