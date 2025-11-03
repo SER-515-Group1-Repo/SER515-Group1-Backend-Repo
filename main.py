@@ -1,19 +1,16 @@
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from database import SessionLocal, engine
+from database import SessionLocal
 import models
 import schemas
-
-
-models.Base.metadata.create_all(bind=engine)
-
 
 app = FastAPI(title="Requirements Engineering Tool Prototype")
 
 
 origins = [
     "http://localhost:5173",
+    "http://localhost:3000",
 ]
 
 app.add_middleware(
@@ -33,31 +30,20 @@ def get_db():
         db.close()
 
 
-@app.get("/stories")
+@app.get("/stories", response_model=list[schemas.StoryResponse])
 def get_stories(db: Session = Depends(get_db)):
-    stories = db.query(models.UserStory).all()
-    formatted_stories = [
-        {
-            "id": story.id,
-            "title": story.Title,
-            "description": story.Description,
-            "assignee": story.Assignee,
-            "status": story.Status,
-            "createdOn": story.CreatedOn.isoformat()
-        }
-        for story in stories
-    ]
 
-    return formatted_stories
+    stories = db.query(models.UserStory).all()
+    return stories
 
 
 @app.post("/stories")
 def add_story(request: schemas.StoryCreate, db: Session = Depends(get_db)):
     new_story = models.UserStory(
-        Title=request.title,
-        Description=request.description,
-        Assignee=request.assignee,
-        Status=request.status
+        title=request.title,
+        description=request.description,
+        assignee=request.assignee,
+        status=request.status
     )
     db.add(new_story)
     db.commit()

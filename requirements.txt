@@ -1,0 +1,19 @@
+# requirements.txt
+
+# FastAPI framework and server
+fastapi[all]
+uvicorn
+
+# Database
+sqlalchemy
+# mysqlclient
+PyMySQL
+alembic
+
+# Async Tasks
+celery
+redis
+
+# Data Science / AI
+pandas
+numpy
