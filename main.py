@@ -34,10 +34,10 @@ print("Test Github Connection")
 
 
 @app.get("/stories", response_model=list[schemas.StoryResponse])
-def get_stories(db: Session = Depends(get_db)):
-
-    stories = db.query(models.UserStory).all()
-    return stories
+def get_stories(assignee: str | None = None,db: Session = Depends(get_db)):
+    if assignee:
+        return db.query(models.UserStory).filter(models.UserStory.assignee == assignee).all()
+    return db.query(models.UserStory).all()
 
 
 @app.post("/stories")
