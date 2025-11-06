@@ -27,3 +27,19 @@ class StoryResponse(BaseModel):
         alias_generator=to_camel_case,
         populate_by_name=True,
     )
+
+class UserCreate(BaseModel):
+    email: EmailStr = Field(..., description="User’s email address")
+    password: str = Field(..., min_length=8, description="Plain-text password")
+
+class UserResponse(BaseModel):
+    id: int
+    email: EmailStr
+    is_active: bool
+    created_on: datetime
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        alias_generator=to_camel_case,
+        populate_by_name=True,
+    )

@@ -17,3 +17,4 @@ redis
 # Data Science / AI
 pandas
 numpy
+passlib[bcrypt]

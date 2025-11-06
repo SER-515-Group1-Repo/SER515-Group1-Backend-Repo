@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, func
+from sqlalchemy import Column, Integer, String, Text, DateTime, func, Boolean
 from database import Base
 
 
@@ -9,4 +9,12 @@ class UserStory(Base):
     description = Column(Text, nullable=False)
     assignee = Column(String(250), nullable=False, server_default="Unassigned")
     status = Column(String(250), nullable=False, server_default="In Progress")
+    created_on = Column(DateTime(timezone=True), server_default=func.now())
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(255), nullable=False, unique=True, index=True)
+    password_hash = Column(String(255), nullable=False)
+    is_active = Column(Boolean, nullable=False, server_default="1")
     created_on = Column(DateTime(timezone=True), server_default=func.now())

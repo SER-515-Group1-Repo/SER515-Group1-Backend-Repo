@@ -4,6 +4,9 @@ from sqlalchemy.orm import Session
 from database import SessionLocal
 import models
 import schemas
+from passlib.context import CryptContext
+from schemas import UserCreate, UserResponse
+
 
 app = FastAPI(title="Requirements Engineering Tool Prototype")
 
@@ -52,3 +55,15 @@ def add_story(request: schemas.StoryCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_story)
     return {"message": "Story added successfully", "story": new_story}
+
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+@app.post("/users", response_model=UserResponse)
+def create_user(request: UserCreate, db: Session = Depends(get_db)):
+    hashed = pwd_context.hash(request.password)
+    user = models.User(email=request.email, password_hash=hashed)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
