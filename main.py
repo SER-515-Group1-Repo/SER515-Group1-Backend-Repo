@@ -67,3 +67,5 @@ def create_user(request: UserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
     return user
+
+
