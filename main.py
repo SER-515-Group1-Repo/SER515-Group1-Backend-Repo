@@ -93,3 +93,10 @@ def login_for_access_token(
     token = auth.create_access_token(user.email)
     return {"access_token": token, "token_type": "bearer"}
 
+@app.post("/logout")
+def logout():
+    """
+    Dummy logout endpoint – client should discard its JWT.
+    """
+    return {"message": "Successfully logged out"}
+

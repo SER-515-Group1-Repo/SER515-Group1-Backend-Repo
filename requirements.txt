@@ -18,3 +18,5 @@ redis
 pandas
 numpy
 passlib[bcrypt]
+python-jose[cryptography]
+python-dotenv

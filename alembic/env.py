@@ -1,3 +1,7 @@
+from dotenv import load_dotenv
+load_dotenv()   # reads SER515-Group1-Backend-Repo/.env
+
+
 from models import Base
 from os.path import abspath, dirname
 import sys

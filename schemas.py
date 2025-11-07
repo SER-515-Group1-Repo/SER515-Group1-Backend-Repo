@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, EmailStr, ConfigDict
 from typing import Optional
 from datetime import datetime
 
@@ -43,3 +43,6 @@ class UserResponse(BaseModel):
         alias_generator=to_camel_case,
         populate_by_name=True,
     )
+class Token(BaseModel):
+    access_token: str
+    token_type: str  # always "bearer"
