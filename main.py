@@ -12,10 +12,10 @@ import schemas
 from passlib.context import CryptContext
 from schemas import UserCreate, UserResponse
 import auth, schemas, models
-from auth import create_access_token
+from auth import create_access_token, verify_access_token
 
 app = FastAPI(title="Requirements Engineering Tool Prototype")
-
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 origins = [
     "http://localhost:5173",
@@ -99,4 +99,21 @@ def logout():
     Dummy logout endpoint – client should discard its JWT.
     """
     return {"message": "Successfully logged out"}
+
+def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
+    creds = verify_access_token(token)
+    email = creds.get("sub")
+    if not email:
+        raise HTTPException(401, "Invalid or expired token")
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if not user:
+        raise HTTPException(401, "User not found")
+    return user
+
+@app.get("/me", response_model=schemas.UserResponse)
+def read_current_user(current_user: models.User = Depends(get_current_user)):
+    return current_user
 
