@@ -11,7 +11,7 @@ class StoryCreate(BaseModel):
     assignee: Optional[str] = Field(
         default="Unassigned", description="Person assigned to the story")
     status: Optional[str] = Field(
-        default="In Progress", description="Current status of the story")
+        default="Proposed", description="Current status of the story")
 
 
 class StoryResponse(BaseModel):

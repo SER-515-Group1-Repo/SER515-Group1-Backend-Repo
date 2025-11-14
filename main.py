@@ -51,11 +51,13 @@ def get_stories(assignee: Optional[str] = None,db: Session = Depends(get_db)):
 
 @app.post("/stories")
 def add_story(request: schemas.StoryCreate, db: Session = Depends(get_db)):
+    # Use provided status or default to "Proposed" if not provided
+    story_status = request.status if request.status else "Proposed"
     new_story = models.UserStory(
         title=request.title,
         description=request.description,
-        assignee=request.assignee,
-        status=request.status
+        assignee=request.assignee or "Unassigned",
+        status=story_status
     )
     db.add(new_story)
     db.commit()
