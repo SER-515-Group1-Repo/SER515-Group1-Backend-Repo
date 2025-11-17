@@ -9,6 +9,8 @@ class UserStory(Base):
     description = Column(Text, nullable=False)
     assignee = Column(String(250), nullable=False, server_default="Unassigned")
     status = Column(String(250), nullable=False, server_default="In Progress")
+    tags = Column(String(500), nullable=True)
+    created_by = Column(String(250), nullable=True)
     created_on = Column(DateTime(timezone=True), server_default=func.now())
 
 

@@ -12,6 +12,7 @@ class StoryCreate(BaseModel):
         default="Unassigned", description="Person assigned to the story")
     status: Optional[str] = Field(
         default="In Progress", description="Current status of the story")
+    tags: Optional[str] = Field(default=None, description="Comma-separated tags")
 
 
 class StoryResponse(BaseModel):
@@ -20,6 +21,8 @@ class StoryResponse(BaseModel):
     description: Optional[str]
     assignee: Optional[str]
     status: str
+    tags: Optional[str]
+    created_by: Optional[str]
     created_on: datetime
 
     model_config = ConfigDict(
