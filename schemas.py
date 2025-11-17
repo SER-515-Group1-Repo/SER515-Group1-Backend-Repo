@@ -55,3 +55,14 @@ class LoginRequest(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str  # always "bearer"
+
+class WorkspaceSummary(BaseModel):
+    username: str
+    total_stories: int
+    by_status: dict
+    stories: list[StoryResponse]
+    model_config = ConfigDict(
+        from_attributes=True,
+        alias_generator=to_camel_case,
+        populate_by_name=True,
+    )

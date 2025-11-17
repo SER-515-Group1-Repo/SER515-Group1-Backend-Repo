@@ -10,9 +10,11 @@ class UserStory(Base):
     assignee = Column(String(250), nullable=False, server_default="Unassigned")
     status = Column(String(250), nullable=False, server_default="In Progress")
     created_on = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class User(Base):
     __tablename__ = "users"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(250), nullable=False, unique=True, index=True)
     first_name = Column(String(250), nullable=False)
