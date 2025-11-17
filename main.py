@@ -139,7 +139,7 @@ def get_workspace_data(
     by_status = {}
     for s in stories:
         by_status[s.status] = by_status.get(s.status, 0) + 1
-
+#returning
     return schemas.WorkspaceSummary(
         username=username,
         total_stories=len(stories),

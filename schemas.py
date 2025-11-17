@@ -61,7 +61,7 @@ class WorkspaceSummary(BaseModel):
     total_stories: int
     by_status: dict
     stories: list[StoryResponse]
-
+#newconfig
     model_config = ConfigDict(
         from_attributes=True,
         alias_generator=to_camel_case,
