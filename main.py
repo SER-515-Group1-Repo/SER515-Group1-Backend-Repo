@@ -1,7 +1,5 @@
 from dotenv import load_dotenv
-
-load_dotenv()  # reads SER515-Group1-Backend-Repo/.env
-
+load_dotenv()
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from fastapi.middleware.cors import CORSMiddleware
@@ -40,9 +38,7 @@ def get_db():
     finally:
         db.close()
 
-
 print("Test Github Connection")
-
 
 @app.get("/stories", response_model=list[schemas.StoryResponse])
 def get_stories(assignee: Optional[str] = None, db: Session = Depends(get_db)):
@@ -65,11 +61,8 @@ def add_story(request: schemas.StoryCreate, db: Session = Depends(get_db)):
     return {"message": "Story added successfully", "story": new_story}
 
 
-# pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 @app.post("/users", response_model=schemas.UserResponse)
 def create_user(request: schemas.UserCreate, db: Session = Depends(get_db)):
-    # Split full name into first and last
     name_parts = request.name.strip().split(maxsplit=1)
     first_name = name_parts[0]
     last_name = name_parts[1] if len(name_parts) > 1 else ""
@@ -89,11 +82,8 @@ def create_user(request: schemas.UserCreate, db: Session = Depends(get_db)):
 
 
 @app.post("/login", response_model=schemas.Token)
-# def login_json(request: schemas.LoginRequest, db: Session = Depends(get_db)):
 def login_json(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    # user = db.query(models.User).filter_by(email=request.email).first()
     user = db.query(models.User).filter_by(email=form_data.username).first()
-    # if not user or not pwd_context.verify(request.password, user.password_hash):
     if not user or not pwd_context.verify(form_data.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -109,7 +99,7 @@ def logout():
     Dummy logout endpoint – client should discard its JWT.
     """
     return {"message": "Successfully logged out"}
-
+ 
 
 def get_current_user(
         token: str = Depends(oauth2_scheme),
@@ -145,7 +135,6 @@ def get_workspace_data(
     by_status = {}
     for s in stories:
         by_status[s.status] = by_status.get(s.status, 0) + 1
-    # returning
     return schemas.WorkspaceSummary(
         username=username,
         total_stories=len(stories),
