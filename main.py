@@ -105,6 +105,9 @@ def filter_stories(search: Optional[str] = None, db: Session = Depends(get_db)):
         return db.query(models.UserStory).filter(models.UserStory.title.icontains(search)).all()
 
 
+# pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
 @app.post("/users", response_model=schemas.UserResponse)
 def create_user(request: schemas.UserCreate, db: Session = Depends(get_db)):
     name_parts = request.name.strip().split(maxsplit=1)
