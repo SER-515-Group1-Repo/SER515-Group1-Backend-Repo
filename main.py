@@ -1,17 +1,16 @@
 import auth
-import schemas
-import models
 from auth import create_access_token, verify_access_token
 from schemas import UserCreate, UserResponse
 from passlib.context import CryptContext
+import schemas
+import models
+from datetime import date, datetime
 from typing import Optional
 from database import SessionLocal
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from fastapi import FastAPI, Depends, HTTPException, status
-from datetime import date, datetime
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -39,6 +38,46 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+@app.post("/users", response_model=schemas.UserResponse)
+def create_user(request: schemas.UserCreate, db: Session = Depends(get_db)):
+    name_parts = request.name.strip().split(maxsplit=1)
+    first_name = name_parts[0]
+    last_name = name_parts[1] if len(name_parts) > 1 else ""
+
+    hashed = pwd_context.hash(request.password)
+    user = models.User(
+        username=request.username,
+        first_name=first_name,
+        last_name=last_name,
+        email=request.email,
+        password_hash=hashed
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@app.post("/login", response_model=schemas.Token)
+def login_json(request: schemas.LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter_by(email=request.email).first()
+    if not user or not pwd_context.verify(request.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password"
+        )
+    token = auth.create_access_token(sub=user.email)
+    return {"access_token": token, "token_type": "bearer"}
+
+
+@app.post("/logout")
+def logout():
+    """
+    Dummy logout endpoint – client should discard its JWT.
+    """
+    return {"message": "Successfully logged out"}
 
 
 def get_current_user(
@@ -104,60 +143,6 @@ def add_story(request: schemas.StoryCreate, current_user: models.User = Depends(
     db.commit()
     db.refresh(new_story)
     return {"message": "Story added successfully", "story": new_story}
-
-# Endpoint for filtering ideas
-
-
-@app.get("/filter", response_model=list[schemas.StoryResponse])
-def filter_stories(search: Optional[str] = None, db: Session = Depends(get_db)):
-    if not search:
-        return db.query(models.UserStory).all()
-
-    if search.isdigit():
-        story_id = int(search)
-        return db.query(models.UserStory).filter(models.UserStory.id == story_id).all()
-    else:
-        return db.query(models.UserStory).filter(models.UserStory.title.icontains(search)).all()
-
-
-@app.post("/users", response_model=schemas.UserResponse)
-def create_user(request: schemas.UserCreate, db: Session = Depends(get_db)):
-    name_parts = request.name.strip().split(maxsplit=1)
-    first_name = name_parts[0]
-    last_name = name_parts[1] if len(name_parts) > 1 else ""
-
-    hashed = pwd_context.hash(request.password)
-    user = models.User(
-        username=request.username,
-        first_name=first_name,
-        last_name=last_name,
-        email=request.email,
-        password_hash=hashed
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user
-
-
-@app.post("/login", response_model=schemas.Token)
-def login_json(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    user = db.query(models.User).filter_by(email=form_data.username).first()
-    if not user or not pwd_context.verify(form_data.password, user.password_hash):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
-        )
-    token = auth.create_access_token(sub=user.email)
-    return {"access_token": token, "token_type": "bearer"}
-
-
-@app.post("/logout")
-def logout():
-    """
-    Dummy logout endpoint – client should discard its JWT.
-    """
-    return {"message": "Successfully logged out"}
 
 
 @app.get("/profile", response_model=schemas.UserResponse)
