@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, EmailStr, ConfigDict
+from pydantic import BaseModel, Field, EmailStr, ConfigDict, field_validator
 from typing import Optional, List, Union
 from datetime import datetime
 
@@ -24,12 +24,25 @@ class StoryResponse(BaseModel):
     description: Optional[str]
     assignee: Optional[str]
     status: str
-    tags: Optional[str]
+    tags: Optional[List[str]] = None
     acceptance_criteria: Optional[list] = None
     story_points: Optional[int] = None
     activity: Optional[list] = None
     created_by: Optional[str]
     created_on: datetime
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def parse_tags(cls, v):
+        """Convert string tags to list of strings"""
+        if v is None:
+            return []
+        if isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            # Split by comma and strip whitespace
+            return [tag.strip() for tag in v.split(",") if tag.strip()]
+        return []
 
     model_config = ConfigDict(
         from_attributes=True,
