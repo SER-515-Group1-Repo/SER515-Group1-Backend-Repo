@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
-from typing import Optional
+from typing import Optional, List, Union
 from datetime import datetime
 
 from helper import to_camel_case
@@ -12,7 +12,7 @@ class StoryCreate(BaseModel):
         default="Unassigned", description="Person assigned to the story")
     status: Optional[str] = Field(
         default="In Progress", description="Current status of the story")
-    tags: Optional[str] = Field(default=None, description="Comma-separated tags")
+    tags: Optional[Union[List[str], str]] = None
 
 
 class StoryResponse(BaseModel):

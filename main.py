@@ -131,12 +131,32 @@ def get_stories(
 
 @app.post("/stories")
 def add_story(request: schemas.StoryCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not request.title or not request.title.strip():
+        raise HTTPException(
+            status_code=400, detail={"message":"Title cannot be empty"}
+        )
+    if not request.description or not request.description.strip():
+        raise HTTPException(
+            status_code=400, detail={"message":"Description cannot be empty"}
+        )
+    if not request.assignee or not request.assignee.strip():
+        raise HTTPException(
+            status_code=400, detail={"message":"Assignee cannot be empty"}
+        )
+    tags_value = None
+    if isinstance(request.tags, list):
+        tags_value = ",".join(request.tags)
+    elif isinstance(request.tags, str):
+        tags_value = request.tags
+    else:
+        tags_value = None
+
     new_story = models.UserStory(
         title=request.title,
         description=request.description,
         assignee=request.assignee,
         status=request.status,
-        tags=request.tags,
+        tags=tags_value,
         created_by=current_user.username
     )
     db.add(new_story)
