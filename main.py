@@ -144,6 +144,20 @@ def add_story(request: schemas.StoryCreate, current_user: models.User = Depends(
     db.refresh(new_story)
     return {"message": "Story added successfully", "story": new_story}
 
+# Endpoint for filtering ideas
+
+
+@app.get("/filter", response_model=list[schemas.StoryResponse])
+def filter_stories(search: Optional[str] = None, db: Session = Depends(get_db)):
+    if not search:
+        return db.query(models.UserStory).all()
+
+    if search.isdigit():
+        story_id = int(search)
+        return db.query(models.UserStory).filter(models.UserStory.id == story_id).all()
+    else:
+        return db.query(models.UserStory).filter(models.UserStory.title.icontains(search)).all()
+
 
 @app.get("/profile", response_model=schemas.UserResponse)
 def get_user_profile(current_user: models.User = Depends(get_current_user)):
