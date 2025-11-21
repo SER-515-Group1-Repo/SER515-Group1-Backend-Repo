@@ -13,6 +13,9 @@ class StoryCreate(BaseModel):
     status: Optional[str] = Field(
         default="In Progress", description="Current status of the story")
     tags: Optional[Union[List[str], str]] = None
+    acceptance_criteria: Optional[list] = Field(default=[], description="List of acceptance criteria (max 5)")
+    story_points: Optional[int] = Field(default=None, description="Story points")
+    activity: Optional[list] = Field(default=[], description="Activity/comments log")
 
 
 class StoryResponse(BaseModel):
@@ -22,6 +25,9 @@ class StoryResponse(BaseModel):
     assignee: Optional[str]
     status: str
     tags: Optional[str]
+    acceptance_criteria: Optional[list] = None
+    story_points: Optional[int] = None
+    activity: Optional[list] = None
     created_by: Optional[str]
     created_on: datetime
 

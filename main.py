@@ -157,12 +157,48 @@ def add_story(request: schemas.StoryCreate, current_user: models.User = Depends(
         assignee=request.assignee,
         status=request.status,
         tags=tags_value,
+        acceptance_criteria=request.acceptance_criteria or [],
+        story_points=request.story_points,
+        activity=request.activity or [],
         created_by=current_user.username
     )
     db.add(new_story)
     db.commit()
     db.refresh(new_story)
     return {"message": "Story added successfully", "story": new_story}
+
+
+@app.put("/stories/{story_id}")
+def update_story(story_id: int, request: schemas.StoryCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    story = db.query(models.UserStory).filter(models.UserStory.id == story_id).first()
+    
+    if not story:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Story not found"
+        )
+    
+    # Update fields
+    story.title = request.title
+    story.description = request.description
+    story.assignee = request.assignee
+    story.status = request.status
+    
+    # Handle tags
+    if isinstance(request.tags, list):
+        story.tags = ",".join(request.tags)
+    elif isinstance(request.tags, str):
+        story.tags = request.tags
+    else:
+        story.tags = None
+    
+    story.acceptance_criteria = request.acceptance_criteria or []
+    story.story_points = request.story_points
+    story.activity = request.activity or []
+    
+    db.commit()
+    db.refresh(story)
+    return {"message": "Story updated successfully", "story": story}
 
 # Endpoint for filtering ideas
 

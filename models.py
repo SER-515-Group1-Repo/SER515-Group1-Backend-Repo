@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, func, Boolean
+from sqlalchemy import Column, Integer, String, Text, DateTime, func, Boolean, JSON
 from database import Base
 
 
@@ -10,6 +10,9 @@ class UserStory(Base):
     assignee = Column(String(250), nullable=False, server_default="Unassigned")
     status = Column(String(250), nullable=False, server_default="In Progress")
     tags = Column(String(500), nullable=True)
+    acceptance_criteria = Column(JSON, nullable=True, default=[])
+    story_points = Column(Integer, nullable=True)
+    activity = Column(JSON, nullable=True, default=[])
     created_by = Column(String(250), nullable=True)
     created_on = Column(DateTime(timezone=True), server_default=func.now())
 
