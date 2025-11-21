@@ -84,7 +84,9 @@ def get_current_user(
         token: str = Depends(oauth2_scheme),
         db: Session = Depends(get_db)
 ):
+    print(f"DEBUG: Token received: {token}")
     creds = verify_access_token(token)
+    print(f"DEBUG: Credentials: {creds}")
     email = creds.get("sub")
     user = db.query(models.User).filter(models.User.email == email).first()
     if not user:
