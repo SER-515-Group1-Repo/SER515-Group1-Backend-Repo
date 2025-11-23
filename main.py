@@ -175,7 +175,10 @@ def add_story(request: schemas.StoryCreate, current_user: models.User = Depends(
     db.add(new_story)
     db.commit()
     db.refresh(new_story)
-    return {"message": "Story added successfully", "story": new_story}
+    
+    # Convert to StoryResponse schema to ensure proper camelCase serialization
+    story_response = schemas.StoryResponse.from_orm(new_story)
+    return {"message": "Story added successfully", "story": story_response}
 
 
 @app.put("/stories/{story_id}")
@@ -231,19 +234,27 @@ def update_story(story_id: int, request: schemas.StoryCreate, current_user: mode
         story.activity.append({"timestamp": timestamp, "user": username, "action": activity_entry})
         story.tags = tags_value
     
-    # Track story points changes
-    if story.story_points != request.story_points:
+    # Track story points changes - PRESERVE if not provided in request
+    story_points_value = request.story_points if request.story_points is not None else story.story_points
+    if story.story_points != story_points_value:
         old_points = story.story_points or "None"
-        new_points = request.story_points or "None"
+        new_points = story_points_value or "None"
         activity_entry = f"[{timestamp}] {username}: Changed story points from {old_points} to {new_points}"
         story.activity.append({"timestamp": timestamp, "user": username, "action": activity_entry})
-        story.story_points = request.story_points
+        story.story_points = story_points_value
+    else:
+        # Ensure it's set even if not changing
+        story.story_points = story_points_value
     
-    # Track acceptance criteria changes
-    if story.acceptance_criteria != (request.acceptance_criteria or []):
+    # Track acceptance criteria changes - PRESERVE if not provided in request
+    acceptance_criteria_value = request.acceptance_criteria if request.acceptance_criteria else story.acceptance_criteria
+    if story.acceptance_criteria != acceptance_criteria_value:
         activity_entry = f"[{timestamp}] {username}: Updated acceptance criteria"
         story.activity.append({"timestamp": timestamp, "user": username, "action": activity_entry})
-        story.acceptance_criteria = request.acceptance_criteria or []
+        story.acceptance_criteria = acceptance_criteria_value
+    else:
+        # Ensure it's set even if not changing
+        story.acceptance_criteria = acceptance_criteria_value
     
     # If activity is provided in request (new comments), add them
     if request.activity and len(request.activity) > len(story.activity):
@@ -261,7 +272,24 @@ def update_story(story_id: int, request: schemas.StoryCreate, current_user: mode
     
     db.commit()
     db.refresh(story)
-    return {"message": "Story updated successfully", "story": story}
+    
+    # Convert to StoryResponse schema to ensure proper camelCase serialization
+    story_response = schemas.StoryResponse.from_orm(story)
+    return {"message": "Story updated successfully", "story": story_response}
+
+@app.delete("/stories/{story_id}")
+def delete_story(story_id: int, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    story = db.query(models.UserStory).filter(models.UserStory.id == story_id).first()
+    
+    if not story:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Story not found"
+        )
+    
+    db.delete(story)
+    db.commit()
+    return {"message": "Story deleted successfully", "id": story_id}
 
 # Endpoint for filtering ideas
 
