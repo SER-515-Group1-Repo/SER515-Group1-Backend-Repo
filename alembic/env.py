@@ -1,26 +1,26 @@
-from dotenv import load_dotenv
-load_dotenv()   # reads SER515-Group1-Backend-Repo/.env
-
-
 from models import Base
-from os.path import abspath, dirname
-import sys
-from logging.config import fileConfig
-
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-
-from alembic import context
-
 import os
 import sys
-sys.path.append(os.getcwd())
+from os.path import abspath, dirname
+from logging.config import fileConfig
+from dotenv import load_dotenv
+from sqlalchemy import engine_from_config
+from sqlalchemy import pool
+from alembic import context
 from database import Base
+
+sys.path.append(os.getcwd())
+
+load_dotenv()   # reads SER515-Group1-Backend-Repo/.env
 
 target_metadata = Base.metadata
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+
+DB_HOST = os.getenv("DB_HOST", "127.0.0.1")  # Default to localhost if not set
+DB_DATABASE = os.getenv("DB_DATABASE")
+SQLALCHEMY_DATABASE_URL = f"mysql+pymysql://root:@{DB_HOST}/{DB_DATABASE}"
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -36,6 +36,9 @@ sys.path.insert(0, dirname(dirname(abspath(__file__))))
 
 # Import your models' Base
 target_metadata = Base.metadata
+
+# Set the SQLAlchemy URL dynamically
+config.set_main_option("sqlalchemy.url", SQLALCHEMY_DATABASE_URL)
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

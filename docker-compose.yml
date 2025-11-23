@@ -1,0 +1,49 @@
+version: "3.8"
+
+services:
+  # The MySQL Database Service
+  db:
+    image: mysql:8.0
+    command: --default-authentication-plugin=mysql_native_password
+    restart: always
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+    ports:
+      # Expose the database port to your local machine for debugging (optional)
+      - "3306:3306"
+    volumes:
+      # This ensures your database data persists even if the container is removed
+      - mysql_data:/var/lib/mysql
+
+  # The FastAPI Backend Service
+  backend:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount your local code into the container for live-reloading during development
+      - .:/app
+    env_file:
+      - ./.env
+    depends_on:
+      - db
+    # We will create this script in the next step
+    entrypoint: ["/app/entrypoint.sh"]
+
+  # ------------------
+  # FRONTEND SERVICE
+  # ------------------
+  frontend:
+    build:
+      # Tell Docker Compose where to find the frontend's Dockerfile
+      context: ../SER515-Group1-Frontend-Repo
+      dockerfile: Dockerfile
+    ports:
+      # Map port 5173 on your host to port 80 in the container
+      - "5173:80"
+    depends_on:
+      - backend
+
+volumes:
+  mysql_data:
