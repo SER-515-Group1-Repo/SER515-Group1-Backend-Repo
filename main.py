@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from sqlalchemy import func
 from fastapi import Query
 from sqlalchemy import or_
+from sqlalchemy import and_
 load_dotenv()
 
 app = FastAPI(title="Requirements Engineering Tool Prototype")
@@ -106,7 +107,6 @@ def parse_multi(value):
         raw = value.split(",")
     return [v.strip().lower() for v in raw if v.strip()]
 
-
 @app.get("/stories", response_model=list[schemas.StoryResponse])
 def get_stories(
     assignee: Optional[str] = None,
@@ -118,24 +118,34 @@ def get_stories(
     db: Session = Depends(get_db)
 ):
     query = db.query(models.UserStory)
-
     assignee_list = parse_multi(assignee)
     status_list = parse_multi(status)
     tags_list = parse_multi(tags)
     created_list = parse_multi(created_by)
 
     if assignee_list:
-        query = query.filter(func.lower(models.UserStory.assignee).in_(assignee_list))
+        query = query.filter(
+            or_(*[func.lower(models.UserStory.assignee) == a for a in assignee_list])
+        )
 
     if status_list:
-        query = query.filter(func.lower(models.UserStory.status).in_(status_list))
+        query = query.filter(
+            or_(*[func.lower(models.UserStory.status) == s for s in status_list])
+        )
 
     if created_list:
-        query = query.filter(func.lower(models.UserStory.created_by).in_(created_list))
+        query = query.filter(
+            or_(*[func.lower(models.UserStory.created_by) == c for c in created_list])
+        )
 
     if tags_list:
+        query = query.filter(models.UserStory.tags.isnot(None))
+        query = query.filter(models.UserStory.tags != "")
         query = query.filter(
-            or_(*(func.lower(models.UserStory.tags).contains(t) for t in tags_list))
+            or_(*[
+                func.lower(models.UserStory.tags).like(f"%{t}%")
+                for t in tags_list
+            ])
         )
 
     if start_date:
@@ -175,7 +185,6 @@ def add_story(request: schemas.StoryCreate, current_user: models.User = Depends(
     else:
         tags_value = ""
 
-    # Initialize activity with story creation entry
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     initial_activity = [
         {
@@ -212,7 +221,6 @@ def update_story(story_id: int, request: schemas.StoryCreate, current_user: mode
             detail="Story not found"
         )
     
-    # Initialize activity list if it doesn't exist
     if not story.activity:
         story.activity = []
     
@@ -255,7 +263,7 @@ def update_story(story_id: int, request: schemas.StoryCreate, current_user: mode
         story.activity.append({"timestamp": timestamp, "user": username, "action": activity_entry})
         story.tags = tags_value
     
-    # Track story points changes
+
     if story.story_points != request.story_points:
         old_points = story.story_points or "None"
         new_points = request.story_points or "None"
