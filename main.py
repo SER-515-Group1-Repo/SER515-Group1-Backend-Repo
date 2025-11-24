@@ -12,6 +12,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from fastapi import FastAPI, Depends, HTTPException, status
 from dotenv import load_dotenv
+from sqlalchemy import func
+from fastapi import Query
+from sqlalchemy import or_
+from sqlalchemy import and_
 load_dotenv()
 
 app = FastAPI(title="Requirements Engineering Tool Prototype")
@@ -95,6 +99,16 @@ def get_current_user(
     return user
 
 
+def parse_multi(value):
+    if not value:
+        return None
+    if isinstance(value, list):
+        raw = value
+    else:
+        raw = value.split(",")
+    return [v.strip().lower() for v in raw if v.strip()]
+
+
 @app.get("/stories", response_model=list[schemas.StoryResponse])
 def get_stories(
     assignee: Optional[str] = None,
@@ -106,42 +120,65 @@ def get_stories(
     db: Session = Depends(get_db)
 ):
     query = db.query(models.UserStory)
+    assignee_list = parse_multi(assignee)
+    status_list = parse_multi(status)
+    tags_list = parse_multi(tags)
+    created_list = parse_multi(created_by)
 
-    if assignee:
-        query = query.filter(models.UserStory.assignee == assignee)
+    if assignee_list:
+        query = query.filter(
+            or_(*[func.lower(models.UserStory.assignee) == a for a in assignee_list])
+        )
 
-    if status:
-        query = query.filter(models.UserStory.status == status)
+    if status_list:
+        query = query.filter(
+            or_(*[func.lower(models.UserStory.status) == s for s in status_list])
+        )
 
-    if tags:
-        query = query.filter(models.UserStory.tags.contains(tags))
+    if created_list:
+        query = query.filter(
+            or_(*[func.lower(models.UserStory.created_by) == c for c in created_list])
+        )
 
-    if created_by:
-        query = query.filter(models.UserStory.created_by == created_by)
+    if tags_list:
+        query = query.filter(models.UserStory.tags.isnot(None))
+        query = query.filter(models.UserStory.tags != "")
+        query = query.filter(
+            or_(*[
+                func.lower(models.UserStory.tags).like(f"%{t}%")
+                for t in tags_list
+            ])
+        )
 
     if start_date:
         query = query.filter(models.UserStory.created_on >= start_date)
 
     if end_date:
-        end_datetime = datetime.combine(end_date, datetime.max.time())
-        query = query.filter(models.UserStory.created_on <= end_datetime)
+        end_dt = datetime.combine(end_date, datetime.max.time())
+        query = query.filter(models.UserStory.created_on <= end_dt)
 
-    return query.all()
+    stories = query.all()
+
+    for s in stories:
+        if isinstance(s.tags, str):
+            s.tags = [tag.strip() for tag in s.tags.split(",") if tag.strip()]
+
+    return stories
 
 
 @app.post("/stories")
 def add_story(request: schemas.StoryCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     if not request.title or not request.title.strip():
         raise HTTPException(
-            status_code=400, detail={"message":"Title cannot be empty"}
+            status_code=400, detail={"message": "Title cannot be empty"}
         )
     if not request.description or not request.description.strip():
         raise HTTPException(
-            status_code=400, detail={"message":"Description cannot be empty"}
+            status_code=400, detail={"message": "Description cannot be empty"}
         )
     if not request.assignee or not request.assignee.strip():
         raise HTTPException(
-            status_code=400, detail={"message":"Assignee cannot be empty"}
+            status_code=400, detail={"message": "Assignee cannot be empty"}
         )
     tags_value = None
     if isinstance(request.tags, list):
@@ -149,9 +186,8 @@ def add_story(request: schemas.StoryCreate, current_user: models.User = Depends(
     elif isinstance(request.tags, str):
         tags_value = request.tags
     else:
-        tags_value = None
+        tags_value = ""
 
-    # Initialize activity with story creation entry
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     initial_activity = [
         {
@@ -175,7 +211,7 @@ def add_story(request: schemas.StoryCreate, current_user: models.User = Depends(
     db.add(new_story)
     db.commit()
     db.refresh(new_story)
-    
+
     # Convert to StoryResponse schema to ensure proper camelCase serialization
     story_response = schemas.StoryResponse.from_orm(new_story)
     return {"message": "Story added successfully", "story": story_response}
@@ -183,79 +219,86 @@ def add_story(request: schemas.StoryCreate, current_user: models.User = Depends(
 
 @app.put("/stories/{story_id}")
 def update_story(story_id: int, request: schemas.StoryCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    story = db.query(models.UserStory).filter(models.UserStory.id == story_id).first()
-    
+    story = db.query(models.UserStory).filter(
+        models.UserStory.id == story_id).first()
+
     if not story:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Story not found"
         )
-    
-    # Initialize activity list if it doesn't exist
+
     if not story.activity:
         story.activity = []
-    
+
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     username = current_user.username
-    
+
     # Track title changes
     if story.title != request.title:
         activity_entry = f"[{timestamp}] {username}: Changed title from '{story.title}' to '{request.title}'"
-        story.activity.append({"timestamp": timestamp, "user": username, "action": activity_entry})
+        story.activity.append(
+            {"timestamp": timestamp, "user": username, "action": activity_entry})
         story.title = request.title
-    
+
     # Track description changes
     if story.description != request.description:
         activity_entry = f"[{timestamp}] {username}: Updated description"
-        story.activity.append({"timestamp": timestamp, "user": username, "action": activity_entry})
+        story.activity.append(
+            {"timestamp": timestamp, "user": username, "action": activity_entry})
         story.description = request.description
-    
+
     # Track assignee changes
     if story.assignee != request.assignee:
         activity_entry = f"[{timestamp}] {username}: Changed assignee from '{story.assignee}' to '{request.assignee}'"
-        story.activity.append({"timestamp": timestamp, "user": username, "action": activity_entry})
+        story.activity.append(
+            {"timestamp": timestamp, "user": username, "action": activity_entry})
         story.assignee = request.assignee
-    
+
     # Track status changes
     if story.status != request.status:
         activity_entry = f"[{timestamp}] {username}: Changed status from '{story.status}' to '{request.status}'"
-        story.activity.append({"timestamp": timestamp, "user": username, "action": activity_entry})
+        story.activity.append(
+            {"timestamp": timestamp, "user": username, "action": activity_entry})
         story.status = request.status
-    
+
     # Handle tags
     tags_value = None
     if isinstance(request.tags, list):
         tags_value = ",".join(request.tags)
     elif isinstance(request.tags, str):
         tags_value = request.tags
-    
+
     if story.tags != tags_value:
         activity_entry = f"[{timestamp}] {username}: Updated tags"
-        story.activity.append({"timestamp": timestamp, "user": username, "action": activity_entry})
+        story.activity.append(
+            {"timestamp": timestamp, "user": username, "action": activity_entry})
         story.tags = tags_value
-    
+
     # Track story points changes - PRESERVE if not provided in request
     story_points_value = request.story_points if request.story_points is not None else story.story_points
     if story.story_points != story_points_value:
         old_points = story.story_points or "None"
         new_points = story_points_value or "None"
         activity_entry = f"[{timestamp}] {username}: Changed story points from {old_points} to {new_points}"
-        story.activity.append({"timestamp": timestamp, "user": username, "action": activity_entry})
+        story.activity.append(
+            {"timestamp": timestamp, "user": username, "action": activity_entry})
         story.story_points = story_points_value
     else:
         # Ensure it's set even if not changing
         story.story_points = story_points_value
-    
+
     # Track acceptance criteria changes - PRESERVE if not provided in request
     acceptance_criteria_value = request.acceptance_criteria if request.acceptance_criteria else story.acceptance_criteria
     if story.acceptance_criteria != acceptance_criteria_value:
         activity_entry = f"[{timestamp}] {username}: Updated acceptance criteria"
-        story.activity.append({"timestamp": timestamp, "user": username, "action": activity_entry})
+        story.activity.append(
+            {"timestamp": timestamp, "user": username, "action": activity_entry})
         story.acceptance_criteria = acceptance_criteria_value
     else:
         # Ensure it's set even if not changing
         story.acceptance_criteria = acceptance_criteria_value
-    
+
     # If activity is provided in request (new comments), add them
     if request.activity and len(request.activity) > len(story.activity):
         # Only add new activities that weren't already tracked
@@ -269,24 +312,26 @@ def update_story(story_id: int, request: schemas.StoryCreate, current_user: mode
                         "action": f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {username}: {activity_item['text']}"
                     }
                     story.activity.append(new_entry)
-    
+
     db.commit()
     db.refresh(story)
-    
+
     # Convert to StoryResponse schema to ensure proper camelCase serialization
     story_response = schemas.StoryResponse.from_orm(story)
     return {"message": "Story updated successfully", "story": story_response}
 
+
 @app.delete("/stories/{story_id}")
 def delete_story(story_id: int, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    story = db.query(models.UserStory).filter(models.UserStory.id == story_id).first()
-    
+    story = db.query(models.UserStory).filter(
+        models.UserStory.id == story_id).first()
+
     if not story:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Story not found"
         )
-    
+
     db.delete(story)
     db.commit()
     return {"message": "Story deleted successfully", "id": story_id}
