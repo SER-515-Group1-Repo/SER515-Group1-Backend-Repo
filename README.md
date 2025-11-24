@@ -93,13 +93,24 @@ This project is designed to be the central control point for running the entire 
 
 3.  **Create the backend environment file.** Copy the example file to create your local `.env` file. This is required for Docker to configure the services.
 
+*   **On macOS / Linux:**
     ```bash
     cp .env.example .env
     ```
+*   **On Windows (Command Prompt):**
+    ```bash
+    copy .env.example .env
+    ```
 
 4.  **Create the frontend environment file.** This command creates the `.env` file inside the frontend directory.
+
+*   **On macOS / Linux:**
     ```bash
     cp ../SER515-Group1-Frontend-Repo/.env.example ../SER515-Group1-Frontend-Repo/.env
+    ```
+*   **On Windows (Command Prompt):**
+    ```bash
+    copy ..\SER515-Group1-Frontend-Repo\.env.example ..\SER515-Group1-Frontend-Repo\.env
     ```
 
 ### Running the Full-Stack Application
