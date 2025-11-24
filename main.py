@@ -12,6 +12,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from fastapi import FastAPI, Depends, HTTPException, status
 from dotenv import load_dotenv
+from sqlalchemy import func
+from fastapi import Query
+from sqlalchemy import or_
+from sqlalchemy import and_
 load_dotenv()
 
 app = FastAPI(title="Requirements Engineering Tool Prototype")
@@ -94,6 +98,14 @@ def get_current_user(
         )
     return user
 
+def parse_multi(value):
+    if not value:
+        return None
+    if isinstance(value, list):
+        raw = value
+    else:
+        raw = value.split(",")
+    return [v.strip().lower() for v in raw if v.strip()]
 
 @app.get("/stories", response_model=list[schemas.StoryResponse])
 def get_stories(
@@ -106,28 +118,50 @@ def get_stories(
     db: Session = Depends(get_db)
 ):
     query = db.query(models.UserStory)
+    assignee_list = parse_multi(assignee)
+    status_list = parse_multi(status)
+    tags_list = parse_multi(tags)
+    created_list = parse_multi(created_by)
 
-    if assignee:
-        query = query.filter(models.UserStory.assignee == assignee)
+    if assignee_list:
+        query = query.filter(
+            or_(*[func.lower(models.UserStory.assignee) == a for a in assignee_list])
+        )
 
-    if status:
-        query = query.filter(models.UserStory.status == status)
+    if status_list:
+        query = query.filter(
+            or_(*[func.lower(models.UserStory.status) == s for s in status_list])
+        )
 
-    if tags:
-        query = query.filter(models.UserStory.tags.contains(tags))
+    if created_list:
+        query = query.filter(
+            or_(*[func.lower(models.UserStory.created_by) == c for c in created_list])
+        )
 
-    if created_by:
-        query = query.filter(models.UserStory.created_by == created_by)
+    if tags_list:
+        query = query.filter(models.UserStory.tags.isnot(None))
+        query = query.filter(models.UserStory.tags != "")
+        query = query.filter(
+            or_(*[
+                func.lower(models.UserStory.tags).like(f"%{t}%")
+                for t in tags_list
+            ])
+        )
 
     if start_date:
         query = query.filter(models.UserStory.created_on >= start_date)
 
     if end_date:
-        end_datetime = datetime.combine(end_date, datetime.max.time())
-        query = query.filter(models.UserStory.created_on <= end_datetime)
+        end_dt = datetime.combine(end_date, datetime.max.time())
+        query = query.filter(models.UserStory.created_on <= end_dt)
 
-    return query.all()
+    stories = query.all()
 
+    for s in stories:
+        if isinstance(s.tags, str):
+            s.tags = [tag.strip() for tag in s.tags.split(",") if tag.strip()]
+
+    return stories
 
 @app.post("/stories")
 def add_story(request: schemas.StoryCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -149,9 +183,8 @@ def add_story(request: schemas.StoryCreate, current_user: models.User = Depends(
     elif isinstance(request.tags, str):
         tags_value = request.tags
     else:
-        tags_value = None
+        tags_value = ""
 
-    # Initialize activity with story creation entry
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     initial_activity = [
         {
@@ -188,7 +221,6 @@ def update_story(story_id: int, request: schemas.StoryCreate, current_user: mode
             detail="Story not found"
         )
     
-    # Initialize activity list if it doesn't exist
     if not story.activity:
         story.activity = []
     
@@ -231,7 +263,7 @@ def update_story(story_id: int, request: schemas.StoryCreate, current_user: mode
         story.activity.append({"timestamp": timestamp, "user": username, "action": activity_entry})
         story.tags = tags_value
     
-    # Track story points changes
+
     if story.story_points != request.story_points:
         old_points = story.story_points or "None"
         new_points = request.story_points or "None"
