@@ -8,8 +8,8 @@ from helper import to_camel_case
 class StoryCreate(BaseModel):
     title: str = Field(..., description="Title of the story")
     description: str = Field(..., description="Description of the story")
-    assignee: Optional[str] = Field(
-        default="Unassigned", description="Person assigned to the story")
+    assignees: Optional[List[str]] = Field(
+        default=[], description="List of people assigned to the story")
     status: Optional[str] = Field(
         default="In Progress", description="Current status of the story")
     tags: Optional[Union[List[str], str]] = None
@@ -22,7 +22,7 @@ class StoryResponse(BaseModel):
     id: int
     title: str
     description: Optional[str]
-    assignee: Optional[str]
+    assignees: Optional[List[str]] = None
     status: str
     tags: Optional[List[str]] = None
     acceptance_criteria: Optional[list] = None
@@ -30,6 +30,19 @@ class StoryResponse(BaseModel):
     activity: Optional[list] = None
     created_by: Optional[str]
     created_on: datetime
+
+    @field_validator("assignees", mode="before")
+    @classmethod
+    def parse_assignees(cls, v):
+        """Ensure assignees is always a list"""
+        if v is None:
+            return []
+        if isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            # Handle legacy single assignee as comma-separated or single value
+            return [a.strip() for a in v.split(",") if a.strip()]
+        return []
 
     @field_validator("tags", mode="before")
     @classmethod
@@ -74,9 +87,17 @@ class UserResponse(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr  # login uses email
     password: str
+
 class Token(BaseModel):
     access_token: str
     token_type: str  # always "bearer"
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr = Field(..., description="User's email address")
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr = Field(..., description="User's email address")
+    new_password: str = Field(..., min_length=8, description="New password (min 8 characters)")
 
 class WorkspaceSummary(BaseModel):
     username: str

@@ -24,7 +24,9 @@ pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 origins = [
     "http://localhost:5173",
+    "http://127.0.0.1:5173",
     "http://localhost:3000",
+    "http://127.0.0.1:3000",
 ]
 
 app.add_middleware(
@@ -46,6 +48,22 @@ def get_db():
 
 @app.post("/users", response_model=schemas.UserResponse)
 def create_user(request: schemas.UserCreate, db: Session = Depends(get_db)):
+    # Check if email already exists
+    existing_email = db.query(models.User).filter_by(email=request.email).first()
+    if existing_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
+        )
+    
+    # Check if username already exists
+    existing_username = db.query(models.User).filter_by(username=request.username).first()
+    if existing_username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already taken"
+        )
+    
     name_parts = request.name.strip().split(maxsplit=1)
     first_name = name_parts[0]
     last_name = name_parts[1] if len(name_parts) > 1 else ""
@@ -67,11 +85,21 @@ def create_user(request: schemas.UserCreate, db: Session = Depends(get_db)):
 @app.post("/login", response_model=schemas.Token)
 def login_json(request: schemas.LoginRequest, db: Session = Depends(get_db)):
     user = db.query(models.User).filter_by(email=request.email).first()
-    if not user or not pwd_context.verify(request.password, user.password_hash):
+    
+    # Check if user exists
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No account found with this email"
+        )
+    
+    # Check if password is correct
+    if not pwd_context.verify(request.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
+            detail="Incorrect password"
         )
+    
     token = auth.create_access_token(sub=user.email)
     return {"access_token": token, "token_type": "bearer"}
 
@@ -82,6 +110,43 @@ def logout():
     Dummy logout endpoint – client should discard its JWT.
     """
     return {"message": "Successfully logged out"}
+
+
+@app.post("/forgot-password")
+def forgot_password(request: schemas.ForgotPasswordRequest, db: Session = Depends(get_db)):
+    """
+    Verify if email exists for password reset.
+    Returns success if email exists, 404 if not found.
+    """
+    user = db.query(models.User).filter_by(email=request.email).first()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No account found with this email"
+        )
+    
+    return {"message": "Email verified", "email": request.email}
+
+
+@app.post("/reset-password")
+def reset_password(request: schemas.ResetPasswordRequest, db: Session = Depends(get_db)):
+    """
+    Reset user's password.
+    """
+    user = db.query(models.User).filter_by(email=request.email).first()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No account found with this email"
+        )
+    
+    # Hash the new password and update
+    user.password_hash = pwd_context.hash(request.new_password)
+    db.commit()
+    
+    return {"message": "Password reset successfully"}
 
 
 def get_current_user(
@@ -126,8 +191,9 @@ def get_stories(
     created_list = parse_multi(created_by)
 
     if assignee_list:
+        # Filter by assignees JSON array - check if any requested assignee is in the array
         query = query.filter(
-            or_(*[func.lower(models.UserStory.assignee) == a for a in assignee_list])
+            or_(*[func.json_contains(models.UserStory.assignees, f'"{a}"') for a in assignee_list])
         )
 
     if status_list:
@@ -176,10 +242,10 @@ def add_story(request: schemas.StoryCreate, current_user: models.User = Depends(
         raise HTTPException(
             status_code=400, detail={"message": "Description cannot be empty"}
         )
-    if not request.assignee or not request.assignee.strip():
-        raise HTTPException(
-            status_code=400, detail={"message": "Assignee cannot be empty"}
-        )
+    
+    # Assignees is optional - default to empty list
+    assignees_value = request.assignees if request.assignees else []
+    
     tags_value = None
     if isinstance(request.tags, list):
         tags_value = ",".join(request.tags)
@@ -200,7 +266,7 @@ def add_story(request: schemas.StoryCreate, current_user: models.User = Depends(
     new_story = models.UserStory(
         title=request.title,
         description=request.description,
-        assignee=request.assignee,
+        assignees=assignees_value,
         status=request.status,
         tags=tags_value,
         acceptance_criteria=request.acceptance_criteria or [],
@@ -248,12 +314,16 @@ def update_story(story_id: int, request: schemas.StoryCreate, current_user: mode
             {"timestamp": timestamp, "user": username, "action": activity_entry})
         story.description = request.description
 
-    # Track assignee changes
-    if story.assignee != request.assignee:
-        activity_entry = f"[{timestamp}] {username}: Changed assignee from '{story.assignee}' to '{request.assignee}'"
+    # Track assignees changes
+    old_assignees = story.assignees or []
+    new_assignees = request.assignees or []
+    if set(old_assignees) != set(new_assignees):
+        old_str = ", ".join(old_assignees) if old_assignees else "None"
+        new_str = ", ".join(new_assignees) if new_assignees else "None"
+        activity_entry = f"[{timestamp}] {username}: Changed assignees from '{old_str}' to '{new_str}'"
         story.activity.append(
             {"timestamp": timestamp, "user": username, "action": activity_entry})
-        story.assignee = request.assignee
+        story.assignees = new_assignees
 
     # Track status changes
     if story.status != request.status:
@@ -288,8 +358,8 @@ def update_story(story_id: int, request: schemas.StoryCreate, current_user: mode
         # Ensure it's set even if not changing
         story.story_points = story_points_value
 
-    # Track acceptance criteria changes - PRESERVE if not provided in request
-    acceptance_criteria_value = request.acceptance_criteria if request.acceptance_criteria else story.acceptance_criteria
+    # Track acceptance criteria changes - use request value if provided (even if empty list)
+    acceptance_criteria_value = request.acceptance_criteria if request.acceptance_criteria is not None else story.acceptance_criteria
     if story.acceptance_criteria != acceptance_criteria_value:
         activity_entry = f"[{timestamp}] {username}: Updated acceptance criteria"
         story.activity.append(
@@ -300,18 +370,24 @@ def update_story(story_id: int, request: schemas.StoryCreate, current_user: mode
         story.acceptance_criteria = acceptance_criteria_value
 
     # If activity is provided in request (new comments), add them
-    if request.activity and len(request.activity) > len(story.activity):
-        # Only add new activities that weren't already tracked
+    if request.activity:
+        # Create a new list from existing activity to ensure SQLAlchemy detects the change
+        updated_activity = list(story.activity) if story.activity else []
         for activity_item in request.activity:
-            if activity_item not in story.activity:
-                # Check if it's a manual comment (doesn't start with timestamp pattern)
-                if isinstance(activity_item, dict) and "text" in activity_item:
-                    new_entry = {
-                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "user": username,
-                        "action": f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {username}: {activity_item['text']}"
-                    }
-                    story.activity.append(new_entry)
+            # Check if it's a manual comment (has "text" property)
+            if isinstance(activity_item, dict) and "text" in activity_item:
+                new_entry = {
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "user": username,
+                    "action": f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {username}: Comment: {activity_item['text']}"
+                }
+                updated_activity.append(new_entry)
+        # Only update if new comments were added
+        if len(updated_activity) > (len(story.activity) if story.activity else 0):
+            story.activity = updated_activity
+            # Mark activity as modified to ensure SQLAlchemy saves it
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(story, "activity")
 
     db.commit()
     db.refresh(story)
