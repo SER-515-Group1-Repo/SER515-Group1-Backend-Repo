@@ -30,6 +30,7 @@ class StoryResponse(BaseModel):
     activity: Optional[list] = None
     created_by: Optional[str]
     created_on: datetime
+    position: int
 
     @field_validator("tags", mode="before")
     @classmethod
@@ -88,3 +89,9 @@ class WorkspaceSummary(BaseModel):
         alias_generator=to_camel_case,
         populate_by_name=True,
     )
+
+class StroyPositionUpdate(BaseModel):
+    story_id: int
+    new_position: int
+class StoryReorderRequest(BaseModel):
+    reordered_stories: List[StroyPositionUpdate]

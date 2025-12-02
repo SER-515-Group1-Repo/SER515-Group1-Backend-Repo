@@ -157,7 +157,7 @@ def get_stories(
         end_dt = datetime.combine(end_date, datetime.max.time())
         query = query.filter(models.UserStory.created_on <= end_dt)
 
-    stories = query.all()
+    stories = query.order_by(models.UserStory.position.asc()).all()
 
     for s in stories:
         if isinstance(s.tags, str):
@@ -196,6 +196,8 @@ def add_story(request: schemas.StoryCreate, current_user: models.User = Depends(
             "action": f"[{timestamp}] {current_user.username}: Created story"
         }
     ]
+    max_position = db.query(func.max(models.UserStory.position)).scalar()
+    next_position = (max_position or 0) + 1 if max_position is not None else 0
 
     new_story = models.UserStory(
         title=request.title,
@@ -206,7 +208,8 @@ def add_story(request: schemas.StoryCreate, current_user: models.User = Depends(
         acceptance_criteria=request.acceptance_criteria or [],
         story_points=request.story_points,
         activity=initial_activity,
-        created_by=current_user.username
+        created_by=current_user.username,
+        position=next_position
     )
     db.add(new_story)
     db.commit()
@@ -216,6 +219,33 @@ def add_story(request: schemas.StoryCreate, current_user: models.User = Depends(
     story_response = schemas.StoryResponse.from_orm(new_story)
     return {"message": "Story added successfully", "story": story_response}
 
+@app.put("/stories/reorder")
+def reorder_stories(
+    request: schemas.StoryReorderRequest,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    try:
+        # Update each story in the new order
+        for item in request.reordered_stories:
+            story = db.query(models.UserStory).filter(
+                models.UserStory.id == item.story_id
+            ).first()
+
+            if not story:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Story {item.story_id} not found"
+                )
+
+            story.position = item.new_position
+
+        db.commit()
+        return {"message": "Reordering successful"}
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/stories/{story_id}")
 def update_story(story_id: int, request: schemas.StoryCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -337,7 +367,6 @@ def delete_story(story_id: int, current_user: models.User = Depends(get_current_
     return {"message": "Story deleted successfully", "id": story_id}
 
 # Endpoint for filtering ideas
-
 
 @app.get("/filter", response_model=list[schemas.StoryResponse])
 def filter_stories(search: Optional[str] = None, db: Session = Depends(get_db)):
