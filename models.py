@@ -15,6 +15,7 @@ class UserStory(Base):
     activity = Column(JSON, nullable=True, default=[])
     created_by = Column(String(250), nullable=True)
     created_on = Column(DateTime(timezone=True), server_default=func.now())
+    position = Column(Integer, nullable=False, server_default="0")
 
 
 class User(Base):
