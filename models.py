@@ -7,7 +7,7 @@ class UserStory(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String(250), nullable=False)
     description = Column(Text, nullable=False)
-    assignee = Column(String(250), nullable=False, server_default="Unassigned")
+    assignees = Column(JSON, nullable=True, default=[])  # Changed to JSON array for multiple assignees
     status = Column(String(250), nullable=False, server_default="In Progress")
     tags = Column(String(500), nullable=True)
     acceptance_criteria = Column(JSON, nullable=True, default=[])
