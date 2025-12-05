@@ -4,6 +4,10 @@ from datetime import datetime
 
 from helper import to_camel_case
 
+# Fibonacci sequence values for story points (Agile/Scrum industry standard)
+# Values beyond 13 indicate story should be broken down into smaller tasks
+VALID_STORY_POINTS = [0, 1, 2, 3, 5, 8, 13, 21]
+
 
 class StoryCreate(BaseModel):
     title: str = Field(..., description="Title of the story")
@@ -14,8 +18,24 @@ class StoryCreate(BaseModel):
         default="In Progress", description="Current status of the story")
     tags: Optional[Union[List[str], str]] = None
     acceptance_criteria: Optional[list] = Field(default=[], description="List of acceptance criteria (max 5)")
-    story_points: Optional[int] = Field(default=None, description="Story points")
+    story_points: Optional[int] = Field(default=None, description="Story points (Fibonacci: 0,1,2,3,5,8,13,21,34,55,89)")
     activity: Optional[list] = Field(default=[], description="Activity/comments log")
+
+    @field_validator("story_points", mode="before")
+    @classmethod
+    def validate_story_points(cls, v):
+        """Validate that story points are in the Fibonacci sequence"""
+        if v is None or v == "" or v == "null":
+            return None
+        # Convert to int if it's a string
+        if isinstance(v, str):
+            try:
+                v = int(v)
+            except ValueError:
+                raise ValueError(f"Story points must be a number")
+        if v not in VALID_STORY_POINTS:
+            raise ValueError(f"Story points must be a Fibonacci number: {VALID_STORY_POINTS}")
+        return v
 
 
 class StoryResponse(BaseModel):
