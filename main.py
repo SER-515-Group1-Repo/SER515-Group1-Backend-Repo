@@ -452,3 +452,17 @@ def get_workspace_data(
         by_status=by_status,
         stories=stories,
     )
+
+@app.get("/backlog", response_model=list[schemas.StoryResponse])
+def get_backlog_stories(
+        current_user: models.User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
+    stories = db.query(models.UserStory).filter(
+        models.UserStory.status == "backlog"
+    ).all()
+
+    for s in stories:
+        if isinstance(s.tags, str):
+            s.tags = [tag.strip() for tag in s.tags.split(",") if tag.strip()]
+    return stories
