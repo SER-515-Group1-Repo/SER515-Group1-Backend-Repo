@@ -10,6 +10,9 @@ sqlalchemy
 PyMySQL
 alembic
 
+# Add psycopg2-binary to support Postgres (optional when using DATABASE_URL)
+psycopg2-binary
+
 # Async Tasks
 celery
 redis

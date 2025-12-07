@@ -1,0 +1,19 @@
+services:
+  - type: web_service
+    name: re-backend
+    repo: https://github.com/SER-515-Group1-Repo/SER515-Group1-Backend-Repo
+    branch: main
+    dockerfilePath: Dockerfile
+    env: python
+    buildCommand: docker build -t re-backend .
+    startCommand: ./entrypoint.sh
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        value: ""
+      - key: SECRET_KEY
+        secure: true
+      - key: ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "30"

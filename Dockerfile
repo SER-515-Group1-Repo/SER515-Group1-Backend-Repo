@@ -28,10 +28,9 @@ COPY . .
 # Make the entrypoint script executable inside the container
 RUN chmod +x /app/entrypoint.sh
 
-# 6. Expose the port that Uvicorn will run on.
+# 6. Expose the port that Uvicorn will run on (default 8000)
 EXPOSE 8000
 
-# 7. The default command to run when the container starts.
-# We will override this with our entrypoint script later to run migrations first.
-# Using 0.0.0.0 is essential to allow traffic from outside the container.
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# 7. Use the entrypoint script as the default command, which runs migrations
+#    and then launches the server; we rely on entrypoint.sh to read PORT
+CMD ["/bin/sh", "-c", "./entrypoint.sh"]

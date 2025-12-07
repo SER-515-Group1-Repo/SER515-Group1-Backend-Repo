@@ -11,16 +11,20 @@ from database import Base
 
 sys.path.append(os.getcwd())
 
-load_dotenv()   # reads SER515-Group1-Backend-Repo/.env
+load_dotenv()   # reads .env
 
 target_metadata = Base.metadata
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
 
-DB_HOST = os.getenv("DB_HOST", "127.0.0.1")  # Default to localhost if not set
-DB_DATABASE = os.getenv("DB_DATABASE")
-SQLALCHEMY_DATABASE_URL = f"mysql+pymysql://root:@{DB_HOST}/{DB_DATABASE}"
+DATABASE_URL = os.getenv("DATABASE_URL")
+if DATABASE_URL:
+    SQLALCHEMY_DATABASE_URL = DATABASE_URL
+else:
+    DB_HOST = os.getenv("DB_HOST", "127.0.0.1")  # Default to localhost if not set
+    DB_DATABASE = os.getenv("DB_DATABASE")
+    SQLALCHEMY_DATABASE_URL = f"mysql+pymysql://root:@{DB_HOST}/{DB_DATABASE}"
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
