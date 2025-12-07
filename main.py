@@ -20,7 +20,7 @@ load_dotenv()
 
 app = FastAPI(title="Requirements Engineering Tool Prototype")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
-pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 origins = [
     "http://localhost:5173",
