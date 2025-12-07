@@ -75,9 +75,11 @@ class StoryCreate(BaseModel):
         description="Tasks identified for implementation",
     )
 
-    moscow_priority: Optional[str] = Field(default=None, description="MoSCoW priority: Must, Should, Could, Won't")
-    activity: Optional[list] = Field(default=[], description="Activity/comments log")
-    
+    moscow_priority: Optional[str] = Field(
+        default=None, description="MoSCoW priority: Must, Should, Could, Won't")
+    activity: Optional[list] = Field(
+        default=[], description="Activity/comments log")
+
     @field_validator("moscow_priority", mode="before")
     @classmethod
     def validate_moscow_priority(cls, v):
@@ -86,7 +88,8 @@ class StoryCreate(BaseModel):
             return None
         valid_priorities = ["Must", "Should", "Could", "Won't"]
         if v not in valid_priorities:
-            raise ValueError(f"MoSCoW priority must be one of: {valid_priorities}")
+            raise ValueError(
+                f"MoSCoW priority must be one of: {valid_priorities}")
         return v
 
     @field_validator("story_points", mode="before")
@@ -174,8 +177,8 @@ class UserCreate(BaseModel):
                           description="Unique username for story assignment")
     email: EmailStr = Field(..., description="User's email address")
     password: str = Field(..., min_length=8, description="Plain-text password")
-    role_code: Optional[str] = Field(default=None,
-                                     description="Role code (product-manager, stakeholder, dev-team, scrum-master)")
+    role_code: str = Field(default="product-manager",
+                           description="Role code (product-manager, stakeholder, dev-team, scrum-master)")
 
 
 class UserResponse(BaseModel):
