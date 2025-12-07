@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DB_HOST = os.getenv("DB_HOST")
+DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
 DB_DATABASE = os.getenv("DB_DATABASE")
 
 # The format for a passwordless connection is "username:@"
