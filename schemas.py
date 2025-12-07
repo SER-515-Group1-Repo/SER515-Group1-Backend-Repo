@@ -15,12 +15,61 @@ class StoryCreate(BaseModel):
     assignees: Optional[List[str]] = Field(
         default=[], description="List of people assigned to the story")
     status: Optional[str] = Field(
-        default="In Progress", description="Current status of the story")
+        default="Backlog", description="Current status of the story")
     tags: Optional[Union[List[str], str]] = None
     acceptance_criteria: Optional[list] = Field(default=[], description="List of acceptance criteria (max 5)")
     story_points: Optional[int] = Field(default=None, description="Story points (Fibonacci: 0,1,2,3,5,8,13,21,34,55,89)")
     activity: Optional[list] = Field(default=[], description="Activity/comments log")
+    bv: Optional[int] = Field(
+        default=None,
+        description="Business value (required when moving Backlog → Proposed)",
+    )
+    refinement_session_scheduled: Optional[bool] = Field(
+        default=False,
+        description="Checklist: refinement session scheduled (Proposed → Needs Refinement)",
+    )
+    groomed: Optional[bool] = Field(
+        default=False,
+        description="Checklist: story is groomed (Proposed → Needs Refinement)",
+    )
+    dependencies: Optional[list] = Field(
+        default=[],
+        description="Dependencies for the story, like AC (Proposed → Needs Refinement)",
+    )
+    session_documented: Optional[bool] = Field(
+        default=False,
+        description="Checklist: refinement session documented (Proposed → Needs Refinement)",
+    )
+    refinement_dependencies: Optional[list] = Field(
+        default=[],
+        description="Dependencies identified during In Refinement stage",
+    )
+    team_approval: Optional[bool] = Field(
+        default=False,
+        description="Team approval for moving In Refinement → Ready To Commit",
+    )
+    po_approval: Optional[bool] = Field(
+        default=False,
+        description="PO approval for moving In Refinement → Ready To Commit",
+    )
 
+    # ----- Ready To Commit → Sprint Ready criteria -----
+    sprint_capacity: Optional[int] = Field(
+        default=None,
+        description="Sprint capacity used when moving Ready To Commit → Sprint Ready",
+    )
+    skills_available: Optional[bool] = Field(
+        default=False,
+        description="Skills available in team for this story",
+    )
+    team_commits: Optional[bool] = Field(
+        default=False,
+        description="Team commits to deliver this story in the sprint",
+    )
+    tasks_identified: Optional[bool] = Field(
+        default=False,
+        description="Tasks identified for implementation",
+    )
     @field_validator("story_points", mode="before")
     @classmethod
     def validate_story_points(cls, v):
@@ -50,6 +99,18 @@ class StoryResponse(BaseModel):
     activity: Optional[list] = None
     created_by: Optional[str]
     created_on: datetime
+    bv: Optional[int] = None
+    refinement_session_scheduled: Optional[bool] = None
+    groomed: Optional[bool] = None
+    dependencies: Optional[list] = None
+    session_documented: Optional[bool] = None
+    refinement_dependencies: Optional[list] = None
+    team_approval: Optional[bool] = None
+    po_approval: Optional[bool] = None
+    sprint_capacity: Optional[int] = None
+    skills_available: Optional[bool] = None
+    team_commits: Optional[bool] = None
+    tasks_identified: Optional[bool] = None
 
     @field_validator("assignees", mode="before")
     @classmethod
