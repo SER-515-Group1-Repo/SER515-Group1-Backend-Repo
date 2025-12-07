@@ -37,6 +37,67 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+VALID_STATUSES = [
+    "Backlog",
+    "Proposed",
+    "Needs Refinement",
+    "In Refinement",
+    "Ready To Commit",
+    "Sprint Ready",
+]
+
+STATUS_CANONICAL = {s.lower(): s for s in VALID_STATUSES}
+
+STATUS_TRANSITIONS = {
+    "Backlog": {"Proposed"},                        
+    "Proposed": {"Needs Refinement", "Backlog"},
+    "Needs Refinement": {"In Refinement", "Proposed"},
+    "In Refinement": {"Ready To Commit", "Needs Refinement"},
+    "Ready To Commit": {"Sprint Ready", "In Refinement"},
+    "Sprint Ready": {"Ready To Commit"},
+}
+
+def ensure_valid_status_or_400(raw_status: Optional[str]) -> str:
+    """
+    Make sure status is one of VALID_STATUSES.
+    Returns canonical label (e.g. 'Backlog') or raises HTTP 400.
+    """
+    if raw_status is None or raw_status == "":
+        # default if missing
+        return "backlog"
+
+    key = raw_status.strip().lower()
+    canonical = STATUS_CANONICAL.get(key)
+    if not canonical:
+        allowed = ", ".join(VALID_STATUSES)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid status '{raw_status}'. Allowed values: {allowed}",
+        )
+    return canonical
+
+
+def validate_status_transition_or_400(old_status: str, new_status: str):
+    """
+    Enforce allowed movements between statuses using STATUS_TRANSITIONS.
+    Both old_status and new_status can be any case; they are canonicalized first.
+    """
+    if old_status is None or new_status is None:
+        return
+
+    old_canon = ensure_valid_status_or_400(old_status)
+    new_canon = ensure_valid_status_or_400(new_status)
+
+    # No movement? Always allowed.
+    if old_canon == new_canon:
+        return
+
+    allowed_targets = STATUS_TRANSITIONS.get(old_canon, set())
+    if new_canon not in allowed_targets:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid status transition from '{old_canon}' to '{new_canon}'.",
+        )
 
 def get_db():
     db = SessionLocal()
@@ -242,7 +303,7 @@ def add_story(request: schemas.StoryCreate, current_user: models.User = Depends(
         raise HTTPException(
             status_code=400, detail={"message": "Description cannot be empty"}
         )
-    
+    request.status = ensure_valid_status_or_400(request.status)
     # Assignees is optional - default to empty list
     assignees_value = request.assignees if request.assignees else []
     
@@ -296,6 +357,16 @@ def update_story(story_id: int, request: schemas.StoryCreate, current_user: mode
 
     if not story.activity:
         story.activity = []
+
+    old_status = story.status
+    desired_status = request.status if request.status is not None else old_status
+
+    canonical_old = ensure_valid_status_or_400(old_status)
+    canonical_new = ensure_valid_status_or_400(desired_status)
+
+    validate_status_transition_or_400(canonical_old, canonical_new)
+
+    request.status = canonical_new
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     username = current_user.username
@@ -452,3 +523,17 @@ def get_workspace_data(
         by_status=by_status,
         stories=stories,
     )
+
+@app.get("/backlog", response_model=list[schemas.StoryResponse])
+def get_backlog_stories(
+        current_user: models.User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
+    stories = db.query(models.UserStory).filter(
+        models.UserStory.status == "backlog"
+    ).all()
+
+    for s in stories:
+        if isinstance(s.tags, str):
+            s.tags = [tag.strip() for tag in s.tags.split(",") if tag.strip()]
+    return stories
