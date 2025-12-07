@@ -6,7 +6,8 @@ from helper import to_camel_case
 
 # Fibonacci sequence values for story points (Agile/Scrum industry standard)
 # Values beyond 13 indicate story should be broken down into smaller tasks
-VALID_STORY_POINTS = [0, 1, 2, 3, 5, 8, 13, 21]
+# Note: 0 is excluded because a 0-point story means no effort = not a real story
+VALID_STORY_POINTS = [1, 2, 3, 5, 8, 13, 21]
 
 
 class StoryCreate(BaseModel):
@@ -74,6 +75,20 @@ class StoryCreate(BaseModel):
         description="Tasks identified for implementation",
     )
 
+    moscow_priority: Optional[str] = Field(default=None, description="MoSCoW priority: Must, Should, Could, Won't")
+    activity: Optional[list] = Field(default=[], description="Activity/comments log")
+    
+    @field_validator("moscow_priority", mode="before")
+    @classmethod
+    def validate_moscow_priority(cls, v):
+        """Validate that MoSCoW priority is one of the valid options"""
+        if v is None or v == "" or v == "null":
+            return None
+        valid_priorities = ["Must", "Should", "Could", "Won't"]
+        if v not in valid_priorities:
+            raise ValueError(f"MoSCoW priority must be one of: {valid_priorities}")
+        return v
+
     @field_validator("story_points", mode="before")
     @classmethod
     def validate_story_points(cls, v):
@@ -101,6 +116,8 @@ class StoryResponse(BaseModel):
     tags: Optional[List[str]] = None
     acceptance_criteria: Optional[list] = None
     story_points: Optional[int] = None
+    moscow_priority: Optional[str] = None
+    mvp_score: Optional[float] = None
     activity: Optional[list] = None
     created_by: Optional[str]
     created_on: datetime

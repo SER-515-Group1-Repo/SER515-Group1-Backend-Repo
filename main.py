@@ -240,10 +240,10 @@ def enforce_transition_criteria_or_400(
         if not ac:
             missing.append("Acceptance Criteria")
 
-        # In Refinement Dependencies
-        ref_deps = effective("refinement_dependencies")
-        if not ref_deps or len(ref_deps) == 0:
-            missing.append("In Refinement Dependencies")
+        # Dependencies (same field used from Needs Refinement stage)
+        deps = effective("dependencies")
+        if not deps or len(deps) == 0:
+            missing.append("Dependencies")
 
         team_approval = effective("team_approval")
         if not team_approval:
@@ -561,6 +561,26 @@ def get_stories(
     for s in stories:
         if isinstance(s.tags, str):
             s.tags = [tag.strip() for tag in s.tags.split(",") if tag.strip()]
+        
+        # Calculate MVP score: Business Value (from bv field) / Story Points
+        # Use the actual bv field value, default to 0 if not set
+        business_value = s.bv if s.bv is not None else 0
+        if s.story_points is not None and s.story_points != 0 and s.story_points > 0 and business_value > 0:
+            s.mvp_score = business_value / s.story_points
+        else:
+            s.mvp_score = 0.0
+
+    # Sort stories by MoSCoW priority (primary), then by MVP score (secondary)
+    # MoSCoW priority order: Must > Should > Could > Won't
+    # "Must" stories always come first regardless of MVP score
+    moscow_order = {"Must": 4, "Should": 3, "Could": 2, "Won't": 1}
+    
+    def sort_key(story):
+        moscow_priority_score = moscow_order.get(story.moscow_priority, 0)
+        # MoSCoW is PRIMARY, MVP score is SECONDARY (tiebreaker within same priority)
+        return (moscow_priority_score, story.mvp_score)
+    
+    stories = sorted(stories, key=sort_key, reverse=True)
 
     return stories
 
@@ -604,6 +624,7 @@ def add_story(request: schemas.StoryCreate, current_user: models.User = Depends(
         tags=tags_value,
         acceptance_criteria=request.acceptance_criteria or [],
         story_points=request.story_points,
+        moscow_priority=request.moscow_priority,
         activity=initial_activity,
         created_by=current_user.username,
         bv=getattr(request, "bv", None),
@@ -681,9 +702,26 @@ def update_story(story_id: int, request: schemas.StoryCreate, current_user: mode
             {"timestamp": timestamp, "user": username, "action": activity_entry})
         story.assignees = new_assignees
 
-    # Track status changes
+    # Track status changes with special handling for backward transitions (demotions)
     if story.status != request.status:
-        activity_entry = f"[{timestamp}] {username}: Changed status from '{story.status}' to '{request.status}'"
+        # Define status order for detecting backward transitions
+        status_order = {
+            "Backlog": 0,
+            "Proposed": 1,
+            "Needs Refinement": 2,
+            "In Refinement": 3,
+            "Ready To Commit": 4,
+            "Sprint Ready": 5,
+        }
+        old_order = status_order.get(story.status, 0)
+        new_order = status_order.get(request.status, 0)
+        
+        if new_order < old_order:
+            # This is a backward transition (demotion) - add special note
+            activity_entry = f"[{timestamp}] {username}: ⚠️ DEMOTED status from '{story.status}' to '{request.status}' (moved backward in workflow)"
+        else:
+            activity_entry = f"[{timestamp}] {username}: Changed status from '{story.status}' to '{request.status}'"
+        
         story.activity.append(
             {"timestamp": timestamp, "user": username, "action": activity_entry})
         story.status = request.status
@@ -701,18 +739,16 @@ def update_story(story_id: int, request: schemas.StoryCreate, current_user: mode
             {"timestamp": timestamp, "user": username, "action": activity_entry})
         story.tags = tags_value
 
-    # Track story points changes - PRESERVE if not provided in request
-    story_points_value = request.story_points if request.story_points is not None else story.story_points
+    # Track story points changes - Always use request value (even if None) to allow clearing
+    story_points_value = request.story_points
     if story.story_points != story_points_value:
-        old_points = story.story_points or "None"
-        new_points = story_points_value or "None"
+        old_points = story.story_points if story.story_points is not None else "None"
+        new_points = story_points_value if story_points_value is not None else "None"
         activity_entry = f"[{timestamp}] {username}: Changed story points from {old_points} to {new_points}"
         story.activity.append(
             {"timestamp": timestamp, "user": username, "action": activity_entry})
-        story.story_points = story_points_value
-    else:
-        # Ensure it's set even if not changing
-        story.story_points = story_points_value
+    # Always set the value from request (even if None) to allow clearing
+    story.story_points = story_points_value
 
     # Track acceptance criteria changes - use request value if provided (even if empty list)
         # Track acceptance criteria changes - use request value if provided (even if empty list)
@@ -730,6 +766,20 @@ def update_story(story_id: int, request: schemas.StoryCreate, current_user: mode
     else:
         # Ensure it's set even if not changing
         story.acceptance_criteria = acceptance_criteria_value
+
+    # Track MoSCoW priority changes - Always use request value (even if None) to allow clearing
+    moscow_priority_to_set = request.moscow_priority
+    if story.moscow_priority != moscow_priority_to_set:
+        old_priority = story.moscow_priority if story.moscow_priority is not None else "None"
+        new_priority = moscow_priority_to_set if moscow_priority_to_set is not None else "None"
+        activity_entry = f"[{timestamp}] {username}: Changed MoSCoW priority from '{old_priority}' to '{new_priority}'"
+        story.activity.append(
+            {"timestamp": timestamp, "user": username, "action": activity_entry})
+    # Always set the value from request (even if None) to allow clearing
+    story.moscow_priority = moscow_priority_to_set
+    # Mark moscow_priority as modified to ensure SQLAlchemy detects the change (especially for None)
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(story, "moscow_priority")
 
     # If activity is provided in request (new comments), add them
     if request.activity:
