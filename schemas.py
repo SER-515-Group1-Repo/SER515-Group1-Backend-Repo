@@ -6,7 +6,8 @@ from helper import to_camel_case
 
 # Fibonacci sequence values for story points (Agile/Scrum industry standard)
 # Values beyond 13 indicate story should be broken down into smaller tasks
-VALID_STORY_POINTS = [0, 1, 2, 3, 5, 8, 13, 21]
+# Note: 0 is excluded because a 0-point story means no effort = not a real story
+VALID_STORY_POINTS = [1, 2, 3, 5, 8, 13, 21]
 
 
 class StoryCreate(BaseModel):
