@@ -19,7 +19,19 @@ class StoryCreate(BaseModel):
     tags: Optional[Union[List[str], str]] = None
     acceptance_criteria: Optional[list] = Field(default=[], description="List of acceptance criteria (max 5)")
     story_points: Optional[int] = Field(default=None, description="Story points (Fibonacci: 0,1,2,3,5,8,13,21,34,55,89)")
+    moscow_priority: Optional[str] = Field(default=None, description="MoSCoW priority: Must, Should, Could, Won't")
     activity: Optional[list] = Field(default=[], description="Activity/comments log")
+    
+    @field_validator("moscow_priority", mode="before")
+    @classmethod
+    def validate_moscow_priority(cls, v):
+        """Validate that MoSCoW priority is one of the valid options"""
+        if v is None or v == "" or v == "null":
+            return None
+        valid_priorities = ["Must", "Should", "Could", "Won't"]
+        if v not in valid_priorities:
+            raise ValueError(f"MoSCoW priority must be one of: {valid_priorities}")
+        return v
 
     @field_validator("story_points", mode="before")
     @classmethod
@@ -47,6 +59,8 @@ class StoryResponse(BaseModel):
     tags: Optional[List[str]] = None
     acceptance_criteria: Optional[list] = None
     story_points: Optional[int] = None
+    moscow_priority: Optional[str] = None
+    mvp_score: Optional[float] = None
     activity: Optional[list] = None
     created_by: Optional[str]
     created_on: datetime
