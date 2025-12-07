@@ -37,6 +37,260 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+VALID_STATUSES = [
+    "Backlog",
+    "Proposed",
+    "Needs Refinement",
+    "In Refinement",
+    "Ready To Commit",
+    "Sprint Ready",
+]
+
+STATUS_CANONICAL = {s.lower(): s for s in VALID_STATUSES}
+
+STATUS_TRANSITIONS = {
+    "Backlog": {"Proposed"},
+    "Proposed": {"Needs Refinement", "Backlog"},
+    "Needs Refinement": {"In Refinement", "Proposed"},
+    "In Refinement": {"Ready To Commit", "Needs Refinement"},
+    "Ready To Commit": {"Sprint Ready", "In Refinement"},
+    "Sprint Ready": {"Ready To Commit"},
+}
+
+
+def ensure_valid_status_or_400(raw_status: Optional[str]) -> str:
+    """
+    Make sure status is one of VALID_STATUSES.
+    Returns canonical label (e.g. 'Backlog') or raises HTTP 400.
+    """
+    if raw_status is None or raw_status == "":
+        # default if missing
+        return "Backlog"
+
+    key = raw_status.strip().lower()
+    canonical = STATUS_CANONICAL.get(key)
+    if not canonical:
+        allowed = ", ".join(VALID_STATUSES)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid status '{raw_status}'. Allowed values: {allowed}",
+        )
+    return canonical
+
+
+def validate_status_transition_or_400(old_status: str, new_status: str):
+    """
+    Enforce allowed movements between statuses using STATUS_TRANSITIONS.
+    Both old_status and new_status can be any case; they are canonicalized first.
+    """
+    if old_status is None or new_status is None:
+        return
+
+    old_canon = ensure_valid_status_or_400(old_status)
+    new_canon = ensure_valid_status_or_400(new_status)
+
+    # No movement? Always allowed.
+    if old_canon == new_canon:
+        return
+
+    allowed_targets = STATUS_TRANSITIONS.get(old_canon, set())
+    if new_canon not in allowed_targets:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid status transition from '{old_canon}' to '{new_canon}'.",
+        )
+
+
+def enforce_transition_criteria_or_400(
+    old_status: str,
+    new_status: str,
+    request: schemas.StoryCreate,
+    story: models.UserStory,
+):
+    """
+    Enforce extra business rules for specific status transitions.
+
+    Backlog -> Proposed:
+        - description present
+        - bv present
+
+    Proposed -> Needs Refinement:
+        - description present
+        - bv present
+        - acceptance_criteria non-empty
+
+    Needs Refinement -> In Refinement:
+        - refinement_session_scheduled = True
+        - groomed = True
+        - dependencies non-empty
+        - session_documented = True
+
+    In Refinement -> Ready To Commit:
+        - story_points present
+        - acceptance_criteria non-empty
+        - refinement_dependencies non-empty
+        - team_approval = True
+        - po_approval = True
+
+    Ready To Commit -> Sprint Ready:
+        - sprint_capacity present
+        - skills_available = True
+        - team_commits = True
+        - tasks_identified = True
+    """
+
+    # Helper: prefer request value if explicitly provided, else fall back to DB
+    def effective(name: str):
+        req_val = getattr(request, name, None)
+        return req_val if req_val is not None else getattr(story, name, None)
+
+    # ----- Backlog -> Proposed -----
+    if old_status == "Backlog" and new_status == "Proposed":
+        desc = request.description if request.description is not None else story.description
+        if not desc or not desc.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot move Backlog → Proposed without a basic description.",
+            )
+
+        bv = effective("bv")
+        if bv is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot move Backlog → Proposed without BV (business value).",
+            )
+
+    # ----- Proposed -> Needs Refinement -----
+    if old_status == "Proposed" and new_status == "Needs Refinement":
+        missing = []
+
+        desc = request.description if request.description is not None else story.description
+        if not desc or not desc.strip():
+            missing.append("Basic Description")
+
+        bv = effective("bv")
+        if bv is None:
+            missing.append("BV")
+
+        ac = (
+            request.acceptance_criteria
+            if request.acceptance_criteria is not None
+            else story.acceptance_criteria
+        )
+        if not ac:
+            missing.append("Acceptance Criteria")
+
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Cannot move Proposed → Needs Refinement. Missing: " +
+                    ", ".join(missing)
+                ),
+            )
+
+    # ----- Needs Refinement -> In Refinement -----
+    if old_status == "Needs Refinement" and new_status == "In Refinement":
+        missing = []
+
+        rss = effective("refinement_session_scheduled")
+        if not rss:
+            missing.append("Refinement Session Scheduled")
+
+        groomed = effective("groomed")
+        if not groomed:
+            missing.append("Groomed")
+
+        deps = effective("dependencies")
+        if not deps or len(deps) == 0:
+            missing.append("Dependencies")
+
+        session_doc = effective("session_documented")
+        if not session_doc:
+            missing.append("Session Documented")
+
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Cannot move Needs Refinement → In Refinement. Missing: "
+                    + ", ".join(missing)
+                ),
+            )
+
+    # ----- In Refinement -> Ready To Commit -----
+    if old_status == "In Refinement" and new_status == "Ready To Commit":
+        missing = []
+
+        # Story Estimates: story_points
+        sp = (
+            request.story_points
+            if request.story_points is not None
+            else story.story_points
+        )
+        if sp is None:
+            missing.append("Story Estimates")
+
+        # Acceptance Criteria
+        ac = (
+            request.acceptance_criteria
+            if request.acceptance_criteria is not None
+            else story.acceptance_criteria
+        )
+        if not ac:
+            missing.append("Acceptance Criteria")
+
+        # In Refinement Dependencies
+        ref_deps = effective("refinement_dependencies")
+        if not ref_deps or len(ref_deps) == 0:
+            missing.append("In Refinement Dependencies")
+
+        team_approval = effective("team_approval")
+        if not team_approval:
+            missing.append("Team Approval")
+
+        po_approval = effective("po_approval")
+        if not po_approval:
+            missing.append("PO Approval")
+
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Cannot move In Refinement → Ready To Commit. Missing: "
+                    + ", ".join(missing)
+                ),
+            )
+
+    # ----- Ready To Commit -> Sprint Ready -----
+    if old_status == "Ready To Commit" and new_status == "Sprint Ready":
+        missing = []
+
+        sprint_capacity = effective("sprint_capacity")
+        if sprint_capacity is None:
+            missing.append("Sprint Capacity")
+
+        skills_available = effective("skills_available")
+        if not skills_available:
+            missing.append("Skills Available")
+
+        team_commits = effective("team_commits")
+        if not team_commits:
+            missing.append("Team Commits")
+
+        tasks_identified = effective("tasks_identified")
+        if not tasks_identified:
+            missing.append("Tasks Identified")
+
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Cannot move Ready To Commit → Sprint Ready. Missing: "
+                    + ", ".join(missing)
+                ),
+            )
+
 
 def get_db():
     db = SessionLocal()
@@ -126,7 +380,7 @@ def login_json(request: schemas.LoginRequest, db: Session = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect password"
         )
-    
+
     # Check if user has a role assigned
     if not user.role_code:
         raise HTTPException(
@@ -339,7 +593,7 @@ def add_story(request: schemas.StoryCreate, current_user: models.User = Depends(
         raise HTTPException(
             status_code=400, detail={"message": "Description cannot be empty"}
         )
-
+    request.status = ensure_valid_status_or_400(request.status)
     # Assignees is optional - default to empty list
     assignees_value = request.assignees if request.assignees else []
 
@@ -370,7 +624,21 @@ def add_story(request: schemas.StoryCreate, current_user: models.User = Depends(
         story_points=request.story_points,
         moscow_priority=request.moscow_priority,
         activity=initial_activity,
-        created_by=current_user.username
+        created_by=current_user.username,
+        bv=getattr(request, "bv", None),
+        refinement_session_scheduled=getattr(
+            request, "refinement_session_scheduled", None),
+        groomed=getattr(request, "groomed", None),
+        dependencies=getattr(request, "dependencies", None),
+        session_documented=getattr(request, "session_documented", None),
+        refinement_dependencies=getattr(
+            request, "refinement_dependencies", None),
+        team_approval=getattr(request, "team_approval", None),
+        po_approval=getattr(request, "po_approval", None),
+        sprint_capacity=getattr(request, "sprint_capacity", None),
+        skills_available=getattr(request, "skills_available", None),
+        team_commits=getattr(request, "team_commits", None),
+        tasks_identified=getattr(request, "tasks_identified", None)
     )
     db.add(new_story)
     db.commit()
@@ -394,6 +662,15 @@ def update_story(story_id: int, request: schemas.StoryCreate, current_user: mode
 
     if not story.activity:
         story.activity = []
+
+    old_status = story.status
+    desired_status = request.status if request.status is not None else old_status
+    canonical_old = ensure_valid_status_or_400(old_status)
+    canonical_new = ensure_valid_status_or_400(desired_status)
+    validate_status_transition_or_400(canonical_old, canonical_new)
+    enforce_transition_criteria_or_400(
+        canonical_old, canonical_new, request, story)
+    request.status = canonical_new
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     username = current_user.username
@@ -455,11 +732,17 @@ def update_story(story_id: int, request: schemas.StoryCreate, current_user: mode
     story.story_points = story_points_value
 
     # Track acceptance criteria changes - use request value if provided (even if empty list)
-    acceptance_criteria_value = request.acceptance_criteria if request.acceptance_criteria is not None else story.acceptance_criteria
+        # Track acceptance criteria changes - use request value if provided (even if empty list)
+    acceptance_criteria_value = (
+        request.acceptance_criteria
+        if request.acceptance_criteria is not None
+        else story.acceptance_criteria
+    )
     if story.acceptance_criteria != acceptance_criteria_value:
         activity_entry = f"[{timestamp}] {username}: Updated acceptance criteria"
         story.activity.append(
-            {"timestamp": timestamp, "user": username, "action": activity_entry})
+            {"timestamp": timestamp, "user": username, "action": activity_entry}
+        )
         story.acceptance_criteria = acceptance_criteria_value
     else:
         # Ensure it's set even if not changing
@@ -486,18 +769,62 @@ def update_story(story_id: int, request: schemas.StoryCreate, current_user: mode
         for activity_item in request.activity:
             # Check if it's a manual comment (has "text" property)
             if isinstance(activity_item, dict) and "text" in activity_item:
+                now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 new_entry = {
-                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "timestamp": now_str,
                     "user": username,
-                    "action": f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {username}: Comment: {activity_item['text']}"
+                    "action": f"[{now_str}] {username}: Comment: {activity_item['text']}",
                 }
                 updated_activity.append(new_entry)
-        # Only update if new comments were added
+
+        # Only update if new comments were actually added
         if len(updated_activity) > (len(story.activity) if story.activity else 0):
             story.activity = updated_activity
-            # Mark activity as modified to ensure SQLAlchemy saves it
             from sqlalchemy.orm.attributes import flag_modified
             flag_modified(story, "activity")
+
+    # Keep criteria fields in sync (if columns exist)
+    if hasattr(story, "bv"):
+        story.bv = getattr(request, "bv", story.bv)
+    if hasattr(story, "refinement_session_scheduled"):
+        story.refinement_session_scheduled = getattr(
+            request,
+            "refinement_session_scheduled",
+            story.refinement_session_scheduled,
+        )
+    if hasattr(story, "groomed"):
+        story.groomed = getattr(request, "groomed", story.groomed)
+    if hasattr(story, "dependencies"):
+        story.dependencies = getattr(
+            request, "dependencies", story.dependencies)
+    if hasattr(story, "session_documented"):
+        story.session_documented = getattr(
+            request, "session_documented", story.session_documented
+        )
+    if hasattr(story, "refinement_dependencies"):
+        story.refinement_dependencies = getattr(
+            request, "refinement_dependencies", story.refinement_dependencies
+        )
+    if hasattr(story, "team_approval"):
+        story.team_approval = getattr(
+            request, "team_approval", story.team_approval)
+    if hasattr(story, "po_approval"):
+        story.po_approval = getattr(request, "po_approval", story.po_approval)
+    if hasattr(story, "sprint_capacity"):
+        story.sprint_capacity = getattr(
+            request, "sprint_capacity", story.sprint_capacity
+        )
+    if hasattr(story, "skills_available"):
+        story.skills_available = getattr(
+            request, "skills_available", story.skills_available
+        )
+    if hasattr(story, "team_commits"):
+        story.team_commits = getattr(
+            request, "team_commits", story.team_commits)
+    if hasattr(story, "tasks_identified"):
+        story.tasks_identified = getattr(
+            request, "tasks_identified", story.tasks_identified
+        )
 
     db.commit()
     db.refresh(story)
@@ -550,7 +877,7 @@ def get_workspace_data(
     username = current_user.username
 
     stories = db.query(models.UserStory).filter(
-        models.UserStory.assignee == username
+        models.UserStory.assignees == username
     ).all()
 
     by_status = {}
@@ -562,3 +889,18 @@ def get_workspace_data(
         by_status=by_status,
         stories=stories,
     )
+
+
+@app.get("/backlog", response_model=list[schemas.StoryResponse])
+def get_backlog_stories(
+        current_user: models.User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
+    stories = db.query(models.UserStory).filter(
+        models.UserStory.status == "Backlog"
+    ).all()
+
+    for s in stories:
+        if isinstance(s.tags, str):
+            s.tags = [tag.strip() for tag in s.tags.split(",") if tag.strip()]
+    return stories
