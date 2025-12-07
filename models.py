@@ -1,5 +1,12 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, func, Boolean, JSON
+from sqlalchemy import Column, Integer, String, Text, DateTime, func, Boolean, JSON, ForeignKey
 from database import Base
+
+
+class Role(Base):
+    __tablename__ = "roles"
+    
+    code = Column(String(100), primary_key=True, index=True)
+    name = Column(String(250), nullable=False)
 
 
 class UserStory(Base):
@@ -38,4 +45,5 @@ class User(Base):
     email = Column(String(255), nullable=False, unique=True, index=True)
     password_hash = Column(String(255), nullable=False)
     is_active = Column(Boolean, nullable=False, server_default="1")
+    role_code = Column(String(100), ForeignKey("roles.code"), nullable=True)
     created_on = Column(DateTime(timezone=True), server_default=func.now())

@@ -49,13 +49,14 @@ VALID_STATUSES = [
 STATUS_CANONICAL = {s.lower(): s for s in VALID_STATUSES}
 
 STATUS_TRANSITIONS = {
-    "Backlog": {"Proposed"},                        
+    "Backlog": {"Proposed"},
     "Proposed": {"Needs Refinement", "Backlog"},
     "Needs Refinement": {"In Refinement", "Proposed"},
     "In Refinement": {"Ready To Commit", "Needs Refinement"},
     "Ready To Commit": {"Sprint Ready", "In Refinement"},
     "Sprint Ready": {"Ready To Commit"},
 }
+
 
 def ensure_valid_status_or_400(raw_status: Optional[str]) -> str:
     """
@@ -98,6 +99,7 @@ def validate_status_transition_or_400(old_status: str, new_status: str):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid status transition from '{old_canon}' to '{new_canon}'.",
         )
+
 
 def enforce_transition_criteria_or_400(
     old_status: str,
@@ -182,7 +184,8 @@ def enforce_transition_criteria_or_400(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
-                    "Cannot move Proposed → Needs Refinement. Missing: " + ", ".join(missing)
+                    "Cannot move Proposed → Needs Refinement. Missing: " +
+                    ", ".join(missing)
                 ),
             )
 
@@ -287,7 +290,8 @@ def enforce_transition_criteria_or_400(
                     + ", ".join(missing)
                 ),
             )
-        
+
+
 def get_db():
     db = SessionLocal()
     try:
@@ -296,24 +300,50 @@ def get_db():
         db.close()
 
 
+def get_current_user(
+        token: str = Depends(oauth2_scheme),
+        db: Session = Depends(get_db)
+):
+    creds = verify_access_token(token)
+    email = creds.get("sub")
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    return user
+
+
 @app.post("/users", response_model=schemas.UserResponse)
 def create_user(request: schemas.UserCreate, db: Session = Depends(get_db)):
     # Check if email already exists
-    existing_email = db.query(models.User).filter_by(email=request.email).first()
+    existing_email = db.query(models.User).filter_by(
+        email=request.email).first()
     if existing_email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
         )
-    
+
     # Check if username already exists
-    existing_username = db.query(models.User).filter_by(username=request.username).first()
+    existing_username = db.query(models.User).filter_by(
+        username=request.username).first()
     if existing_username:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username already taken"
         )
-    
+
+    # Validate role_code if provided
+    if request.role_code:
+        role = db.query(models.Role).filter_by(code=request.role_code).first()
+        if not role:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid role code: {request.role_code}"
+            )
+
     name_parts = request.name.strip().split(maxsplit=1)
     first_name = name_parts[0]
     last_name = name_parts[1] if len(name_parts) > 1 else ""
@@ -324,7 +354,8 @@ def create_user(request: schemas.UserCreate, db: Session = Depends(get_db)):
         first_name=first_name,
         last_name=last_name,
         email=request.email,
-        password_hash=hashed
+        password_hash=hashed,
+        role_code=request.role_code
     )
     db.add(user)
     db.commit()
@@ -332,26 +363,37 @@ def create_user(request: schemas.UserCreate, db: Session = Depends(get_db)):
     return user
 
 
-@app.post("/login", response_model=schemas.Token)
+@app.post("/login", response_model=schemas.LoginResponse)
 def login_json(request: schemas.LoginRequest, db: Session = Depends(get_db)):
     user = db.query(models.User).filter_by(email=request.email).first()
-    
+
     # Check if user exists
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No account found with this email"
         )
-    
+
     # Check if password is correct
     if not pwd_context.verify(request.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect password"
         )
-    
+
+    # Check if user has a role assigned
+    if not user.role_code:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Contact Product Manager to assign role"
+        )
+
     token = auth.create_access_token(sub=user.email)
-    return {"access_token": token, "token_type": "bearer"}
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": user
+    }
 
 
 @app.post("/logout")
@@ -369,13 +411,13 @@ def forgot_password(request: schemas.ForgotPasswordRequest, db: Session = Depend
     Returns success if email exists, 404 if not found.
     """
     user = db.query(models.User).filter_by(email=request.email).first()
-    
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No account found with this email"
         )
-    
+
     return {"message": "Email verified", "email": request.email}
 
 
@@ -385,32 +427,72 @@ def reset_password(request: schemas.ResetPasswordRequest, db: Session = Depends(
     Reset user's password.
     """
     user = db.query(models.User).filter_by(email=request.email).first()
-    
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No account found with this email"
         )
-    
+
     # Hash the new password and update
     user.password_hash = pwd_context.hash(request.new_password)
     db.commit()
-    
+
     return {"message": "Password reset successfully"}
 
 
-def get_current_user(
-        token: str = Depends(oauth2_scheme),
-        db: Session = Depends(get_db)
+@app.get("/roles", response_model=list[schemas.RoleResponse])
+def get_all_roles(db: Session = Depends(get_db)):
+    """
+    Get all available roles.
+    """
+    roles = db.query(models.Role).all()
+    return roles
+
+
+@app.get("/users", response_model=list[schemas.UserResponse])
+def get_all_users(db: Session = Depends(get_db)):
+    """
+    Get all users with their roles.
+    """
+    users = db.query(models.User).all()
+    return users
+
+
+@app.patch("/users/{user_id}/role", response_model=schemas.UserResponse)
+def update_user_role(
+    user_id: int,
+    request: schemas.UpdateRoleRequest,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
-    creds = verify_access_token(token)
-    email = creds.get("sub")
-    user = db.query(models.User).filter(models.User.email == email).first()
+    # Check if current user has permission (must be product-manager)
+    if current_user.role_code != "product-manager":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Don't have permission to perform this action"
+        )
+
+    user = db.query(models.User).filter_by(id=user_id).first()
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
+
+    # Validate if role exists
+    role = db.query(models.Role).filter_by(code=request.role_code).first()
+    if not role:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid role code: {request.role_code}. Valid roles are: product-manager, stakeholder, dev-team, scrum-master"
+        )
+
+    user.role_code = request.role_code
+    db.commit()
+    db.refresh(user)
+
     return user
 
 
@@ -443,7 +525,8 @@ def get_stories(
     if assignee_list:
         # Filter by assignees JSON array - check if any requested assignee is in the array
         query = query.filter(
-            or_(*[func.json_contains(models.UserStory.assignees, f'"{a}"') for a in assignee_list])
+            or_(*[func.json_contains(models.UserStory.assignees,
+                f'"{a}"') for a in assignee_list])
         )
 
     if status_list:
@@ -495,7 +578,7 @@ def add_story(request: schemas.StoryCreate, current_user: models.User = Depends(
     request.status = ensure_valid_status_or_400(request.status)
     # Assignees is optional - default to empty list
     assignees_value = request.assignees if request.assignees else []
-    
+
     tags_value = None
     if isinstance(request.tags, list):
         tags_value = ",".join(request.tags)
@@ -524,11 +607,13 @@ def add_story(request: schemas.StoryCreate, current_user: models.User = Depends(
         activity=initial_activity,
         created_by=current_user.username,
         bv=getattr(request, "bv", None),
-        refinement_session_scheduled=getattr(request, "refinement_session_scheduled", None),
+        refinement_session_scheduled=getattr(
+            request, "refinement_session_scheduled", None),
         groomed=getattr(request, "groomed", None),
         dependencies=getattr(request, "dependencies", None),
         session_documented=getattr(request, "session_documented", None),
-        refinement_dependencies=getattr(request, "refinement_dependencies", None),
+        refinement_dependencies=getattr(
+            request, "refinement_dependencies", None),
         team_approval=getattr(request, "team_approval", None),
         po_approval=getattr(request, "po_approval", None),
         sprint_capacity=getattr(request, "sprint_capacity", None),
@@ -564,7 +649,8 @@ def update_story(story_id: int, request: schemas.StoryCreate, current_user: mode
     canonical_old = ensure_valid_status_or_400(old_status)
     canonical_new = ensure_valid_status_or_400(desired_status)
     validate_status_transition_or_400(canonical_old, canonical_new)
-    enforce_transition_criteria_or_400(canonical_old, canonical_new, request, story)
+    enforce_transition_criteria_or_400(
+        canonical_old, canonical_new, request, story)
     request.status = canonical_new
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -678,7 +764,8 @@ def update_story(story_id: int, request: schemas.StoryCreate, current_user: mode
     if hasattr(story, "groomed"):
         story.groomed = getattr(request, "groomed", story.groomed)
     if hasattr(story, "dependencies"):
-        story.dependencies = getattr(request, "dependencies", story.dependencies)
+        story.dependencies = getattr(
+            request, "dependencies", story.dependencies)
     if hasattr(story, "session_documented"):
         story.session_documented = getattr(
             request, "session_documented", story.session_documented
@@ -688,7 +775,8 @@ def update_story(story_id: int, request: schemas.StoryCreate, current_user: mode
             request, "refinement_dependencies", story.refinement_dependencies
         )
     if hasattr(story, "team_approval"):
-        story.team_approval = getattr(request, "team_approval", story.team_approval)
+        story.team_approval = getattr(
+            request, "team_approval", story.team_approval)
     if hasattr(story, "po_approval"):
         story.po_approval = getattr(request, "po_approval", story.po_approval)
     if hasattr(story, "sprint_capacity"):
@@ -700,7 +788,8 @@ def update_story(story_id: int, request: schemas.StoryCreate, current_user: mode
             request, "skills_available", story.skills_available
         )
     if hasattr(story, "team_commits"):
-        story.team_commits = getattr(request, "team_commits", story.team_commits)
+        story.team_commits = getattr(
+            request, "team_commits", story.team_commits)
     if hasattr(story, "tasks_identified"):
         story.tasks_identified = getattr(
             request, "tasks_identified", story.tasks_identified
@@ -769,6 +858,7 @@ def get_workspace_data(
         by_status=by_status,
         stories=stories,
     )
+
 
 @app.get("/backlog", response_model=list[schemas.StoryResponse])
 def get_backlog_stories(
