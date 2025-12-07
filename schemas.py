@@ -17,9 +17,12 @@ class StoryCreate(BaseModel):
     status: Optional[str] = Field(
         default="In Progress", description="Current status of the story")
     tags: Optional[Union[List[str], str]] = None
-    acceptance_criteria: Optional[list] = Field(default=[], description="List of acceptance criteria (max 5)")
-    story_points: Optional[int] = Field(default=None, description="Story points (Fibonacci: 0,1,2,3,5,8,13,21,34,55,89)")
-    activity: Optional[list] = Field(default=[], description="Activity/comments log")
+    acceptance_criteria: Optional[list] = Field(
+        default=[], description="List of acceptance criteria (max 5)")
+    story_points: Optional[int] = Field(
+        default=None, description="Story points (Fibonacci: 0,1,2,3,5,8,13,21,34,55,89)")
+    activity: Optional[list] = Field(
+        default=[], description="Activity/comments log")
 
     @field_validator("story_points", mode="before")
     @classmethod
@@ -34,7 +37,8 @@ class StoryCreate(BaseModel):
             except ValueError:
                 raise ValueError(f"Story points must be a number")
         if v not in VALID_STORY_POINTS:
-            raise ValueError(f"Story points must be a Fibonacci number: {VALID_STORY_POINTS}")
+            raise ValueError(
+                f"Story points must be a Fibonacci number: {VALID_STORY_POINTS}")
         return v
 
 
@@ -83,11 +87,17 @@ class StoryResponse(BaseModel):
         populate_by_name=True,
     )
 
+
 class UserCreate(BaseModel):
-    name: str = Field(..., description="Full name (will split into first/last)")
-    username: str = Field(..., description="Unique username for story assignment")
+    name: str = Field(...,
+                      description="Full name (will split into first/last)")
+    username: str = Field(...,
+                          description="Unique username for story assignment")
     email: EmailStr = Field(..., description="User's email address")
     password: str = Field(..., min_length=8, description="Plain-text password")
+    role_code: Optional[str] = Field(default=None,
+                           description="Role code (product-manager, stakeholder, dev-team, scrum-master)")
+
 
 class UserResponse(BaseModel):
     id: int
@@ -96,6 +106,7 @@ class UserResponse(BaseModel):
     last_name: str
     email: EmailStr
     is_active: bool
+    role_code: Optional[str] = None
     created_on: datetime
 
     model_config = ConfigDict(
@@ -104,26 +115,59 @@ class UserResponse(BaseModel):
         populate_by_name=True,
     )
 
+
 class LoginRequest(BaseModel):
     email: EmailStr  # login uses email
     password: str
+
 
 class Token(BaseModel):
     access_token: str
     token_type: str  # always "bearer"
 
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str
+    user: UserResponse
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        alias_generator=to_camel_case,
+        populate_by_name=True,
+    )
+
+
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr = Field(..., description="User's email address")
 
+
 class ResetPasswordRequest(BaseModel):
     email: EmailStr = Field(..., description="User's email address")
-    new_password: str = Field(..., min_length=8, description="New password (min 8 characters)")
+    new_password: str = Field(..., min_length=8,
+                              description="New password (min 8 characters)")
+
+
+class UpdateRoleRequest(BaseModel):
+    role_code: str = Field(..., description="Role code to assign (product-manager, stakeholder, dev-team, scrum-master)")
+
 
 class WorkspaceSummary(BaseModel):
     username: str
     total_stories: int
     by_status: dict
     stories: list[StoryResponse]
+    model_config = ConfigDict(
+        from_attributes=True,
+        alias_generator=to_camel_case,
+        populate_by_name=True,
+    )
+
+
+class RoleResponse(BaseModel):
+    code: str
+    name: str
+
     model_config = ConfigDict(
         from_attributes=True,
         alias_generator=to_camel_case,
