@@ -158,7 +158,8 @@ def enforce_transition_criteria_or_400(
             )
 
         bv = effective("bv")
-        if bv is None:
+        # BV must be set and valid (1-100), treat 0 as invalid
+        if bv is None or bv == 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot move Backlog → Proposed without BV (business value).",
@@ -512,7 +513,7 @@ def parse_multi(value):
 
 @app.get("/stories", response_model=list[schemas.StoryResponse])
 def get_stories(
-    assignee: Optional[str] = None,
+    assignees: Optional[str] = None,
     status: Optional[str] = None,
     tags: Optional[str] = None,
     created_by: Optional[str] = None,
@@ -521,17 +522,19 @@ def get_stories(
     db: Session = Depends(get_db)
 ):
     query = db.query(models.UserStory)
-    assignee_list = parse_multi(assignee)
+    assignees_list = parse_multi(assignees)
     status_list = parse_multi(status)
     tags_list = parse_multi(tags)
     created_list = parse_multi(created_by)
 
-    if assignee_list:
+    if assignees_list:
         # Filter by assignees JSON array - check if any requested assignee is in the array
-        query = query.filter(
-            or_(*[func.json_contains(models.UserStory.assignees,
-                f'"{a}"') for a in assignee_list])
-        )
+        # Case-insensitive matching: check both lowercase and title case variations
+        conditions = []
+        for a in assignees_list:
+            conditions.append(func.json_contains(models.UserStory.assignees, f'"{a.lower()}"'))
+            conditions.append(func.json_contains(models.UserStory.assignees, f'"{a.title()}"'))
+        query = query.filter(or_(*conditions))
 
     if status_list:
         query = query.filter(
