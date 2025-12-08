@@ -154,7 +154,8 @@ def enforce_transition_criteria_or_400(
             )
 
         bv = effective("bv")
-        if bv is None:
+        # BV must be set and valid (1-100), treat 0 as invalid
+        if bv is None or bv == 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot move Backlog → Proposed without BV (business value).",
