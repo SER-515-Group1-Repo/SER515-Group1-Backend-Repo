@@ -42,7 +42,11 @@ sys.path.insert(0, dirname(dirname(abspath(__file__))))
 target_metadata = Base.metadata
 
 # Set the SQLAlchemy URL dynamically
-config.set_main_option("sqlalchemy.url", SQLALCHEMY_DATABASE_URL)
+# configparser does interpolation with '%' which breaks when passwords are
+# URL-encoded and contain percent-escapes. Escape percent signs so config
+# receives a literal percent (%%) and avoids ValueError: invalid interpolation.
+safe_url = SQLALCHEMY_DATABASE_URL.replace('%', '%%') if SQLALCHEMY_DATABASE_URL else SQLALCHEMY_DATABASE_URL
+config.set_main_option("sqlalchemy.url", safe_url)
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
