@@ -46,6 +46,8 @@ VALID_STATUSES = [
     "Sprint Ready",
 ]
 
+print("Valid statuses:", VALID_STATUSES)
+
 STATUS_CANONICAL = {s.lower(): s for s in VALID_STATUSES}
 
 STATUS_TRANSITIONS = {
@@ -561,7 +563,7 @@ def get_stories(
     for s in stories:
         if isinstance(s.tags, str):
             s.tags = [tag.strip() for tag in s.tags.split(",") if tag.strip()]
-        
+
         # Calculate MVP score: Business Value (from bv field) / Story Points
         # Use the actual bv field value, default to 0 if not set
         business_value = s.bv if s.bv is not None else 0
@@ -574,12 +576,12 @@ def get_stories(
     # MoSCoW priority order: Must > Should > Could > Won't
     # "Must" stories always come first regardless of MVP score
     moscow_order = {"Must": 4, "Should": 3, "Could": 2, "Won't": 1}
-    
+
     def sort_key(story):
         moscow_priority_score = moscow_order.get(story.moscow_priority, 0)
         # MoSCoW is PRIMARY, MVP score is SECONDARY (tiebreaker within same priority)
         return (moscow_priority_score, story.mvp_score)
-    
+
     stories = sorted(stories, key=sort_key, reverse=True)
 
     return stories
@@ -715,13 +717,13 @@ def update_story(story_id: int, request: schemas.StoryCreate, current_user: mode
         }
         old_order = status_order.get(story.status, 0)
         new_order = status_order.get(request.status, 0)
-        
+
         if new_order < old_order:
             # This is a backward transition (demotion) - add special note
             activity_entry = f"[{timestamp}] {username}: ⚠️ DEMOTED status from '{story.status}' to '{request.status}' (moved backward in workflow)"
         else:
             activity_entry = f"[{timestamp}] {username}: Changed status from '{story.status}' to '{request.status}'"
-        
+
         story.activity.append(
             {"timestamp": timestamp, "user": username, "action": activity_entry})
         story.status = request.status
@@ -751,7 +753,7 @@ def update_story(story_id: int, request: schemas.StoryCreate, current_user: mode
     story.story_points = story_points_value
 
     # Track acceptance criteria changes - use request value if provided (even if empty list)
-        # Track acceptance criteria changes - use request value if provided (even if empty list)
+    # Track acceptance criteria changes - use request value if provided (even if empty list)
     acceptance_criteria_value = (
         request.acceptance_criteria
         if request.acceptance_criteria is not None
