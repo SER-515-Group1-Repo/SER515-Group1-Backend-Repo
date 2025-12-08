@@ -524,11 +524,12 @@ def get_stories(
 
     if assignees_list:
         # Filter by assignees JSON array - check if any requested assignee is in the array
-        # Handle case-insensitivity by checking both lowercase and title case
-        query = query.filter(
-            or_(*[func.json_contains(models.UserStory.assignees,
-                f'"{a.title()}"') for a in assignees_list])
-        )
+        # Case-insensitive matching: check both lowercase and title case variations
+        conditions = []
+        for a in assignees_list:
+            conditions.append(func.json_contains(models.UserStory.assignees, f'"{a.lower()}"'))
+            conditions.append(func.json_contains(models.UserStory.assignees, f'"{a.title()}"'))
+        query = query.filter(or_(*conditions))
 
     if status_list:
         query = query.filter(
