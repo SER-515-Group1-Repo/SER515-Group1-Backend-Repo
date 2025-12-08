@@ -69,7 +69,7 @@ The application uses a MySQL database named `agile_db` with the following main t
 ---
 
 ## 🚀 Deployment URL
-**URL:** https://ser515-group1-backend-repo.onrender.com
+**URL:** https://ser515-group1-backend-repo.onrender.com/docs
 
 ---
 
