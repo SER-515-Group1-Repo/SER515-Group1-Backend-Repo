@@ -26,6 +26,8 @@ This repository contains the backend API for the Agile Dashboard project. It is 
 - **Authentication:** [python-jose](https://python-jose.readthedocs.io/) (JWT), [passlib](https://passlib.readthedocs.io/) (password hashing)
 - **Server:** [Uvicorn](https://www.uvicorn.org/)
 - **Containerization:** [Docker](https://www.docker.com/) & [Docker Compose](https://docs.docker.com/compose/)
+- **AWS RDS:** MySQL Database deployment
+- **Render:** Python FastAPI deployment
 - **Python Version:** 3.9.6
 
 ---
@@ -63,9 +65,15 @@ The application uses a MySQL database named `agile_db` with the following main t
 | `activity`            | `json`         | Nullable                        |
 | `created_on`          | `datetime`     | Default NOW()                   |
 
+
 ---
 
-## 🚀 Getting Started
+## 🚀 Deployment URL
+**URL:** https://ser515-group1-backend-repo.onrender.com
+
+---
+
+## 📚 Getting Started
 
 This project is designed to be the central control point for running the entire full-stack application via Docker Compose.
 
