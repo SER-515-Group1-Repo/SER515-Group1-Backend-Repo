@@ -508,7 +508,7 @@ def parse_multi(value):
 
 @app.get("/stories", response_model=list[schemas.StoryResponse])
 def get_stories(
-    assignee: Optional[str] = None,
+    assignees: Optional[str] = None,
     status: Optional[str] = None,
     tags: Optional[str] = None,
     created_by: Optional[str] = None,
@@ -517,16 +517,17 @@ def get_stories(
     db: Session = Depends(get_db)
 ):
     query = db.query(models.UserStory)
-    assignee_list = parse_multi(assignee)
+    assignees_list = parse_multi(assignees)
     status_list = parse_multi(status)
     tags_list = parse_multi(tags)
     created_list = parse_multi(created_by)
 
-    if assignee_list:
+    if assignees_list:
         # Filter by assignees JSON array - check if any requested assignee is in the array
+        # Handle case-insensitivity by checking both lowercase and title case
         query = query.filter(
             or_(*[func.json_contains(models.UserStory.assignees,
-                f'"{a}"') for a in assignee_list])
+                f'"{a.title()}"') for a in assignees_list])
         )
 
     if status_list:
