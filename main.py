@@ -29,6 +29,7 @@ origins = [
     "http://127.0.0.1:3000",
     "https://515-group1.vercel.app",
     "https://ser515-group1-frontend-repo.onrender.com",
+    "https://515-group1-agile.vercel.app/",
 ]
 
 app.add_middleware(
@@ -532,8 +533,10 @@ def get_stories(
         # Case-insensitive matching: check both lowercase and title case variations
         conditions = []
         for a in assignees_list:
-            conditions.append(func.json_contains(models.UserStory.assignees, f'"{a.lower()}"'))
-            conditions.append(func.json_contains(models.UserStory.assignees, f'"{a.title()}"'))
+            conditions.append(func.json_contains(
+                models.UserStory.assignees, f'"{a.lower()}"'))
+            conditions.append(func.json_contains(
+                models.UserStory.assignees, f'"{a.title()}"'))
         query = query.filter(or_(*conditions))
 
     if status_list:
