@@ -3,6 +3,10 @@
 # This script is the entrypoint for the backend container.
 # It waits for the database to be ready, runs migrations, and then starts the app.
 
+# Be strict: exit on first error and print expanded commands for debugging
+set -e
+set -x
+
 
 # Wait for DB to be ready (supports DATABASE_URL or DB_HOST)
 echo "Waiting for the database to be ready..."
@@ -29,8 +33,32 @@ if [ -z "$DB_PORT" ]; then
 fi
 
 echo "DB host: $DB_HOSTNAME, port: $DB_PORT"
+
+# Print some debug information that can help while diagnosing deploy issues
+echo "Environment (masked):"
+echo "  PORT: $PORT"
+echo "  DB_HOSTNAME: $DB_HOSTNAME"
+echo "  DB_PORT: $DB_PORT"
+if [ -n "$DATABASE_URL" ]; then
+  # Do not print full DATABASE_URL, mask password
+  MASKED=$(echo $DATABASE_URL | sed -E 's/:[^:@]+@/:<PWD>@/')
+  echo "  DATABASE_URL: $MASKED"
+fi
+
+# Attempt waiting with a loop and a max attempts to avoid infinite hangs
+MAX_ATTEMPTS=60
+SLEEP=3
+ATTEMPTS=0
 while ! nc -z $DB_HOSTNAME $DB_PORT; do
-  sleep 1
+  ATTEMPTS=$((ATTEMPTS + 1))
+  if [ "$ATTEMPTS" -ge "$MAX_ATTEMPTS" ]; then
+    echo "Timeout waiting for DB at $DB_HOSTNAME:$DB_PORT after $((MAX_ATTEMPTS * SLEEP)) seconds"
+    # Print a quick DNS check as well
+    echo "Debug: DNS lookup for host:" && nslookup $DB_HOSTNAME || true
+    # Exit to allow Render to record the failure in logs
+    exit 1
+  fi
+  sleep $SLEEP
 done
 
 echo "Database is ready."
